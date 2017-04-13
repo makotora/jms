@@ -21,7 +21,7 @@ int send_message(char* message, int receiver_pid, int readfd, int writefd)
 		return -3;
 	}
 	//Print reply
-	fprintf(stderr, "%s\n", message);
+	// fprintf(stderr, "%s\n", message);
 
 	return 0;
 }

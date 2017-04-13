@@ -27,6 +27,7 @@ void job_list_free(job_list** list_ptr_ptr)
 	{
 		target = current;
 		current = current->next;
+		free(target->info);
 		free(target);
 	}
 
@@ -34,7 +35,7 @@ void job_list_free(job_list** list_ptr_ptr)
 }
 
 
-void job_list_add(job_list* list_ptr, job_info info)
+void job_list_add(job_list* list_ptr, job_info* info)
 {
 	job_node* new_node = malloc(sizeof(job_node));
 
@@ -60,18 +61,34 @@ void job_list_add(job_list* list_ptr, job_info info)
 }
 
 
-job_info job_list_get(job_list* list_ptr, int node_num)
+job_info* job_list_getid(job_list* list_ptr, int id)
 {
 	job_node* current = list_ptr->first;
 
 	int i;
 
-	for (i=0;i<node_num;i++)
+	for (i=0;i<id;i++)
 	{
 		current = current->next;
 	}
 
 	return current->info;
+}
+
+job_info* job_list_getpid(job_list* list_ptr, int pid)
+{
+	job_node* current = list_ptr->first;
+
+	while (current != NULL)
+	{
+		if (current->info->pid == pid)
+			return current->info;
+
+		current = current->next;
+	}
+	
+
+	return NULL;//no job with this pid
 }
 
 void job_info_print(job_info info)
@@ -89,7 +106,7 @@ void job_list_print(job_list* list_ptr)
 
 	while (current != NULL)
 	{
-		job_info_print(current->info);
+		job_info_print(*(current->info));
 		current = current->next;
 	}
 }
@@ -120,6 +137,7 @@ void pool_list_free(pool_list** list_ptr_ptr)
 	{
 		target = current;
 		current = current->next;
+		free(target->info);
 		free(target);
 	}
 
@@ -127,7 +145,7 @@ void pool_list_free(pool_list** list_ptr_ptr)
 }
 
 
-void pool_list_add(pool_list* list_ptr, pool_info info)
+void pool_list_add(pool_list* list_ptr, pool_info* info)
 {
 	pool_node* new_node = malloc(sizeof(pool_node));
 
@@ -153,18 +171,34 @@ void pool_list_add(pool_list* list_ptr, pool_info info)
 }
 
 
-pool_info pool_list_get(pool_list* list_ptr, int node_num)
+pool_info* pool_list_getid(pool_list* list_ptr, int id)
 {
 	pool_node* current = list_ptr->first;
 
 	int i;
 
-	for (i=0;i<node_num;i++)
+	for (i=0;i<id;i++)
 	{
 		current = current->next;
 	}
 
 	return current->info;
+}
+
+pool_info* pool_list_getpid(pool_list* list_ptr, int pid)
+{
+	pool_node* current = list_ptr->first;
+
+	while (current != NULL)
+	{
+		if (current->info->pid == pid)
+			return current->info;
+
+		current = current->next;
+	}
+	
+
+	return NULL;//no job with this pid
 }
 
 void pool_info_print(pool_info info)
@@ -182,7 +216,7 @@ void pool_list_print(pool_list* list_ptr)
 
 	while (current != NULL)
 	{
-		pool_info_print(current->info);
+		pool_info_print(*(current->info));
 		current = current->next;
 	}
 }

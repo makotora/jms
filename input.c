@@ -18,14 +18,15 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 			break;
 
 		/*ignore blank lines*/
-		if (strlen(line) == 0)
+		if (!strcmp(line, "\n"))
 			continue;
 
+		line[strlen(line) - 1] = '\0';//remove line feed
 		commands_count++;
 		strcpy(command, line);
 
 		/*print the line you just read*/
-		fprintf(stderr, "%s", line);
+		fprintf(stderr, "%s\n", line);
 
 		for (i=0;i<max_args;i++)
 			words[i] = NULL;
@@ -105,6 +106,10 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 					continue;
 				}
 			}
+			else if ( !strcmp(words[0], "exit"))
+			{
+				return commands_count;
+			}
 			else
 			{
 				fprintf(stderr, "Unknown command: %s", command);		
@@ -114,10 +119,12 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 
 		//If we didnt continue.Command was correct.Send it to coord
 		send_message(command, coord_pid, readfd, writefd);
+		fprintf(stderr, "%s", command);
 
 	}
 
 	free(line);
+	free(command);
 	free(words);
 
 	return commands_count;
