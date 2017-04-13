@@ -37,8 +37,8 @@ struct job_list
 job_list* job_list_create();
 void job_list_free(job_list** list_ptr_ptr);
 void job_list_add(job_list* list_ptr, job_info* info);
-job_info* job_list_getid(job_list* list_ptr, int id);
-job_info* job_list_getpid(job_list* list_ptr, int pid);
+job_info* job_list_getby_id(job_list* list_ptr, int id);
+job_info* job_list_getby_pid(job_list* list_ptr, int pid);
 void job_info_print(job_info info);
 void job_list_print(job_list* list_ptr);
 
@@ -67,8 +67,8 @@ struct pool_list
 pool_list* pool_list_create();
 void pool_list_free(pool_list** list_ptr_ptr);
 void pool_list_add(pool_list* list_ptr, pool_info* info);
-pool_info* pool_list_getid(pool_list* list_ptr, int id);
-pool_info* pool_list_getpid(pool_list* list_ptr, int pid);
+pool_info* pool_list_getby_id(pool_list* list_ptr, int id);
+pool_info* pool_list_getby_pid(pool_list* list_ptr, int pid);
 void pool_info_print(pool_info info);
 void pool_list_print(pool_list* list_ptr);
 

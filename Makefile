@@ -43,3 +43,6 @@ tests.o: tests.c
 
 clean:
 	rm -f $(OBJS) $(OBJS2) jms_console jms_coord test pool
+
+count:
+	wc $(SOURCE) $(HEADER)

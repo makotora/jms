@@ -61,7 +61,7 @@ void job_list_add(job_list* list_ptr, job_info* info)
 }
 
 
-job_info* job_list_getid(job_list* list_ptr, int id)
+job_info* job_list_getby_id(job_list* list_ptr, int id)
 {
 	job_node* current = list_ptr->first;
 
@@ -75,7 +75,7 @@ job_info* job_list_getid(job_list* list_ptr, int id)
 	return current->info;
 }
 
-job_info* job_list_getpid(job_list* list_ptr, int pid)
+job_info* job_list_getby_pid(job_list* list_ptr, int pid)
 {
 	job_node* current = list_ptr->first;
 
@@ -171,7 +171,7 @@ void pool_list_add(pool_list* list_ptr, pool_info* info)
 }
 
 
-pool_info* pool_list_getid(pool_list* list_ptr, int id)
+pool_info* pool_list_getby_id(pool_list* list_ptr, int id)
 {
 	pool_node* current = list_ptr->first;
 
@@ -185,7 +185,7 @@ pool_info* pool_list_getid(pool_list* list_ptr, int id)
 	return current->info;
 }
 
-pool_info* pool_list_getpid(pool_list* list_ptr, int pid)
+pool_info* pool_list_getby_pid(pool_list* list_ptr, int pid)
 {
 	pool_node* current = list_ptr->first;
 

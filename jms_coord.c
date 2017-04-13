@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
 
 		if (pool_pid > 0)
 		{
-			p_info = pool_list_getpid(p_list, pool_pid);//get the finished pipe's info
+			p_info = pool_list_getby_pid(p_list, pool_pid);//get the finished pipe's info
 			if (p_info == NULL)
 			{
 				fprintf(stderr, "Fatal error.Cannot find pool node for pool: %d\n", pool_pid);
@@ -128,7 +128,7 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "Coord: Console sent me: %s\n", message);
 			command = malloc((strlen(message) + 1)*sizeof(char));
 			strcpy(command, message);
-			command_type = strtok(command, " ");
+			command_type = strtok(message, " ");//get first word of message to see the type
 
 			/*If its a submit command check if we need to create a new pool*/
 			if (!strcmp(command_type, "submit"))
@@ -187,6 +187,18 @@ int main(int argc, char* argv[])
 					pool_list_add(p_list, p_info);
 				}
 
+				//The pool to handle this submit is there (maybe just created).Forward the submit command
+				p_info = pool_list_getby_id(p_list, job_counter / pool_max);//get info for the correct pool
+
+				if (p_info->status == 0)//If it is still running
+				{//Forward the message
+					send_message(command, p_info->pid, p_info->receive_fd, p_info->send_fd);
+				}
+				else
+				{
+					fprintf(stderr, "Coord: This pool has finished!Need to access its last words array\n");
+				}
+				
 				job_counter++;
 			}
 			else if ( !strcmp(command_type, "shutdown") )

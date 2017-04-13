@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
 
 		if (job_pid > 0)
 		{
-			j_info = job_list_getpid(j_list, job_pid);
+			j_info = job_list_getby_pid(j_list, job_pid);
 			if (j_info == NULL)
 			{
 				fprintf(stderr, "Fatal error.Cannot find job node for job: %d\n", job_pid);
@@ -89,11 +89,13 @@ int main(int argc, char* argv[])
 
 		if (coord_message == 1)
 		{
+			read(receive_fd, message, BUFSIZE);
+			fprintf(stderr, "Pool: (%s) Console sent me: %s\n",receive_pipe, message);
+			strcpy(message, "OK\n");
+			reply_message(message, send_fd);
 			coord_message = 0;
 		}
 
-		sleep(5);
-		break;
 	}
 
 	close(send_fd);
