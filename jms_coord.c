@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 #include <fcntl.h>
 #include <ctype.h>
 #include <unistd.h>
@@ -13,13 +14,8 @@
 #define BUFSIZE 1024
 #define PERMS 0666
 
-#include "protocol.h"
+#include "functions.h"
 #include "lists.h"
-
-int console_message = 0;
-
-void receive(int signum)
-{console_message = 1;}
 
 
 int main(int argc, char* argv[])
@@ -33,6 +29,7 @@ int main(int argc, char* argv[])
 	int status;
 	int pid, console_pid;
 	char message[1024];
+	char* job_count_str;
 	char pool_pipe_in[100]; 
 	char pool_pipe_out[100]; 
 
@@ -45,10 +42,7 @@ int main(int argc, char* argv[])
 	jms_out = "jmsout";
 
 	pool_max = atoi(max_str);
-
-
-	//Set a signal handler for signal 10 (user defined)
-	signal(SIGUSR1, &receive);//this just send global var console_message to 1 (so we know we have to read the pipe)
+	mkdir(path, 0777);
 
 	//Create pipes for communication with console
 	if ( (mkfifo(jms_in, PERMS) < 0) && (errno != EEXIST) )
@@ -63,8 +57,8 @@ int main(int argc, char* argv[])
 
 	fprintf(stderr, "Coord: Created pipes.About to try opening them\n");
 	
-	//Open pipes (block until console opens them as well)
-	if ( (receive_fd = open(jms_in, O_RDONLY)) < 0)
+	//Open pipes
+	if ( (receive_fd = open(jms_in, O_RDONLY | O_NONBLOCK)) < 0)
 	{
 		perror("Cannot open jms_in pipe");
 	}
@@ -79,13 +73,16 @@ int main(int argc, char* argv[])
 	pid = getpid();
 	
 	//"Handshake" with console
-	read(receive_fd, message, BUFSIZE);
+	read(receive_fd, message, BUFSIZE);//This wont fail because console first writes to jms_in and 
+	//after that opens jms_out for reading (unblocking coord)
 	console_pid = atoi(message);
 	fprintf(stderr, "Coord: Received console's pid (%d)\n", console_pid);
 
 	fprintf(stderr, "Coord: My pid is %d.Sending it to console\n", pid);
 	sprintf(message, "%d", pid);
 	write(send_fd, message, BUFSIZE);//Send my pid to console so he can signal me for messages
+
+	
 
 	//HANDLE INCOMING MESSAGES
 	int pool_counter = 0;
@@ -122,13 +119,12 @@ int main(int argc, char* argv[])
 			close(p_info->send_fd);
 		}
 		
-		if (console_message == 1)//This becomes 1 when we receive a signal (10) from console
+		if (read(receive_fd, message, BUFSIZE) > -1)//If we have something to read from console
 		{
-			read(receive_fd, message, BUFSIZE);
 			fprintf(stderr, "Coord: Console sent me: %s\n", message);
 			command = malloc((strlen(message) + 1)*sizeof(char));
 			strcpy(command, message);
-			command_type = strtok(message, " ");//get first word of message to see the type
+			command_type = strtok(message, " \t\n");//get first word of message to see the type
 
 			/*If its a submit command check if we need to create a new pool*/
 			if (!strcmp(command_type, "submit"))
@@ -140,20 +136,13 @@ int main(int argc, char* argv[])
 					sprintf(pool_pipe_in, "pipe%d_in", pool_counter);
 					sprintf(pool_pipe_out, "pipe%d_out", pool_counter);
 
-					//START POOL
-					if ( (pool_pid = fork()) == 0)
-					{
-						execl("./pool","./pool", pool_pipe_in, pool_pipe_out, max_str, NULL);
-					}
-
 					//Start making a new node in the list for this pool
 					p_info = malloc(sizeof(pool_info));
 					p_info->id = pool_counter;
-					p_info->pid = pool_pid;
 					p_info->status = 0;
 					p_info->jobs = NULL;
 
-					//Make pipes for communication with that pool
+					//Make pipes for communication with pool
 					if ( (mkfifo(pool_pipe_in, PERMS) < 0) && (errno != EEXIST) )
 					{
 						perror("Cannot create fifo");
@@ -164,8 +153,23 @@ int main(int argc, char* argv[])
 						perror("Cannot create fifo");
 					}
 
+					//START POOL
+					if ( intToString(job_counter,&job_count_str) != 0)
+						exit(-2); 
+
+					if ( (pool_pid = fork()) == 0)
+					{
+						//close pipes for comm with console (pool doesnt need that)
+						close(receive_fd);
+						close(send_fd);
+						
+						execl("./pool","./pool", path, pool_pipe_in, pool_pipe_out, job_count_str, max_str, NULL);
+					}
+
+					free(job_count_str);
+
 					//Open pipes (block until pool opens them as well)
-					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY)) < 0)
+					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY | O_NONBLOCK)) < 0)
 					{
 						perror("Cannot open jms_in pipe");
 					}
@@ -174,25 +178,28 @@ int main(int argc, char* argv[])
 					{
 						perror("Cannot open jms_out pipe");
 					}
-
+					
 					//"Handshake" with pool
-					read(p_info->receive_fd, message, BUFSIZE);
-					fprintf(stderr, "Coord: Received pool %d pid (%d)\n",pool_counter, atoi(message));
+					read(p_info->receive_fd, message, BUFSIZE);//again like console handshake.this wont fail
+					p_info->pid = atoi(message);
+					fprintf(stderr, "Coord: Received pool %d pid (%d)\n",pool_counter, p_info->pid);
+
 
 					fprintf(stderr, "Coord: My pid is %d.Sending it to pool %d\n", pid, pool_counter);
 					sprintf(message, "%d", pid);
-					write(p_info->send_fd, message, BUFSIZE);//Send my pid to console so he can signal me for messages
+					write(p_info->send_fd, message, BUFSIZE);
 
 					//Pool creation over.Add pool_info to pool_list
 					pool_list_add(p_list, p_info);
 				}
 
 				//The pool to handle this submit is there (maybe just created).Forward the submit command
-				p_info = pool_list_getby_id(p_list, job_counter / pool_max);//get info for the correct pool
+				p_info = pool_list_get_last(p_list);//get info for the correct pool (the last there is)
 
 				if (p_info->status == 0)//If it is still running
 				{//Forward the message
-					send_message(command, p_info->pid, p_info->receive_fd, p_info->send_fd);
+					fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
+					write(p_info->send_fd, command, BUFSIZE);
 				}
 				else
 				{
@@ -208,11 +215,12 @@ int main(int argc, char* argv[])
 
 			//SEND MESSAGE TO CORRECT POOL AND WAIT FOR REPLY
 			strcpy(message, "OK\n");
-			reply_message(message, send_fd);
-			console_message = 0;
+			write(send_fd, message, BUFSIZE);
 			free(command);
 		}
 	}
+
+	pool_list_free(&p_list);
 
 	close(receive_fd);
 	close(send_fd);

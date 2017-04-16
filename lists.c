@@ -91,6 +91,7 @@ job_info* job_list_getby_pid(job_list* list_ptr, int pid)
 	return NULL;//no job with this pid
 }
 
+
 void job_info_print(job_info info)
 {
 	fprintf(stderr, "> JOB %d <\n",info.id);
@@ -199,6 +200,11 @@ pool_info* pool_list_getby_pid(pool_list* list_ptr, int pid)
 	
 
 	return NULL;//no job with this pid
+}
+
+pool_info* pool_list_get_last(pool_list* list_ptr)
+{
+	return list_ptr->last->info;
 }
 
 void pool_info_print(pool_info info)

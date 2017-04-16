@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "protocol.h"
+#include "functions.h"
 
 int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd, int writefd)
 {
@@ -108,17 +108,17 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 			}
 			else if ( !strcmp(words[0], "exit"))
 			{
-				return commands_count;
+				break;
 			}
 			else
 			{
-				fprintf(stderr, "Unknown command: %s", command);		
+				fprintf(stderr, "Unknown command: %s\n", command);		
 				continue;	
 			}
 		}
 
-		//If we didnt continue.Command was correct.Send it to coord
-		send_message(command, coord_pid, readfd, writefd);
+		//If we didnt continue.Command was correct.Send it to coord and receive reply
+		write_and_read(command, readfd, writefd);
 		fprintf(stderr, "%s", command);
 
 	}

@@ -69,6 +69,7 @@ void pool_list_free(pool_list** list_ptr_ptr);
 void pool_list_add(pool_list* list_ptr, pool_info* info);
 pool_info* pool_list_getby_id(pool_list* list_ptr, int id);
 pool_info* pool_list_getby_pid(pool_list* list_ptr, int pid);
+pool_info* pool_list_get_last(pool_list* list_ptr);
 void pool_info_print(pool_info info);
 void pool_list_print(pool_list* list_ptr);
 

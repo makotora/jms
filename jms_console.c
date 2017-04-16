@@ -12,7 +12,7 @@
 
 #define BUFSIZE 1024
 
-#include "protocol.h"
+#include "functions.h"
 #include "input.h"
 
 int main(int argc, char* argv[])
@@ -27,29 +27,25 @@ int main(int argc, char* argv[])
 	//..
 
 	jms_in = "jmsin";//We write here (input for coord)
-	jms_out = "jmsout";//We read from here (input for coord)
+	jms_out = "jmsout";//We read from here (output for coord)
 
-	//Open pipes (unblock coord)
+	//Open pipes and "Handshake" with coord
 	if ( (send_fd = open(jms_in, O_WRONLY)) < 0)
 	{
 		perror("Cannot open jms_in pipe");
 		return -1;
 	}
 
+	pid = getpid();	
+	fprintf(stderr, "Console: My pid is %d.Sending it to coord\n", pid);
+	sprintf(message, "%d", pid);
+	write(send_fd, message, BUFSIZE);//Send coord my pid so he knows who I am
+
 	if ( (receive_fd = open(jms_out, O_RDONLY)) < 0)
 	{
 		perror("Cannot open jms_out pipe");
 		return -1;
 	}
-
-	fprintf(stderr, "Console: Opened pipes!\n");
-
-	pid = getpid();
-	
-	//"Handshake" with coord
-	fprintf(stderr, "Console: My pid is %d.Sending it to coord\n", pid);
-	sprintf(message, "%d", pid);
-	write(send_fd, message, BUFSIZE);//Send coord my pid so he knows who I am
 
 	read(receive_fd, message, BUFSIZE);//Receive coords pid so we can signal him for new messages (to read from pipe)
 	coord_pid = atoi(message);
