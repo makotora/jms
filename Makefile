@@ -1,7 +1,7 @@
 OBJS = jms_coord.o jms_console.o pool.o
-OBJS2 = functions.o lists.o input.o tests.o arglist.o
-SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c tests.c pool.c arglist.c
-HEADER = functions.h lists.h input.h arglist.h
+OBJS2 = functions.o lists.o input.o tests.o arglist.o queue.o
+SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c tests.c pool.c arglist.c queue.c
+HEADER = functions.h lists.h input.h arglist.h queue.h
 CC = gcc
 CFLAGS= -c -Wall $(DEBUG)
 LFLAGS= -Wall $(DEBUG)
@@ -17,8 +17,8 @@ jms_coord: jms_coord.o functions.o lists.o
 jms_console: jms_console.o functions.o input.o
 	$(CC) $(LFLAGS) jms_console.o functions.o input.o -o jms_console
 
-pool: pool.o functions.o lists.o arglist.o
-	$(CC) $(LFLAGS) pool.o functions.o lists.o arglist.o -o pool
+pool: pool.o functions.o lists.o arglist.o queue.o
+	$(CC) $(LFLAGS) pool.o functions.o lists.o queue.o arglist.o -o pool
 
 jms_coord.o: jms_coord.c
 	$(CC) $(CFLAGS) jms_coord.c
@@ -34,6 +34,9 @@ functions.o: functions.c functions.h
 
 lists.o: lists.c lists.h
 	$(CC) $(CFLAGS) lists.c
+
+queue.o: queue.c queue.h
+	$(CC) $(CFLAGS) queue.c
 
 input.o: input.c input.h
 	$(CC) $(CFLAGS) input.c	

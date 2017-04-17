@@ -47,6 +47,7 @@ struct pool_info
 	int id;
 	int pid;
 	int status;/*0 running,1 finished*/
+	int active_count;
 	int send_fd;
 	int receive_fd;
 	job_info* jobs;

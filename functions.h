@@ -16,7 +16,7 @@
 
 #define BUFSIZE 1024
 
-int write_and_read(char* message, int readfd, int writefd);
+int write_and_read(char* message, char* reply, int readfd, int writefd);
 int intToString(int integer,char **string_ptr);
 void get_date_time_str(char* time, char* date);
 

@@ -6,6 +6,7 @@
 
 int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd, int writefd)
 {
+	char message[BUFSIZE];
 	char* line = malloc(max_len*sizeof(char));
 	char* command = malloc(max_len*sizeof(char));
 	char** words = malloc(max_args*sizeof(char*));
@@ -118,8 +119,8 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 		}
 
 		//If we didnt continue.Command was correct.Send it to coord and receive reply
-		write_and_read(command, readfd, writefd);
-		fprintf(stderr, "%s", command);
+		write_and_read(command, message, readfd, writefd);
+		fprintf(stderr, "%s\n", message);
 
 	}
 

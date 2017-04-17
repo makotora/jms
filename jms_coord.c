@@ -28,7 +28,8 @@ int main(int argc, char* argv[])
 	int receive_fd, send_fd;
 	int status;
 	int pid, console_pid;
-	char message[1024];
+	char message[BUFSIZE];
+	char reply[BUFSIZE];
 	char* job_count_str;
 	char pool_pipe_in[100]; 
 	char pool_pipe_out[100]; 
@@ -88,9 +89,11 @@ int main(int argc, char* argv[])
 	int pool_counter = 0;
 	int job_counter = 0;
 	int pool_pid, pool_status;
+	int finished_job_id, i;
 	char* command;
 	char* command_type;
 	pool_list* p_list;
+	pool_node* pool;
 	pool_info* p_info;
 	p_list = pool_list_create();
 
@@ -110,10 +113,8 @@ int main(int argc, char* argv[])
 			}
 
 			p_info->status = 1;//note that it finished
-			read(p_info->receive_fd, message, BUFSIZE);//Read his lasts words
-			fprintf(stderr, "Pool %d (%d) finished: %s\n",p_info->id, p_info->pid, message);
-//TO DO:LAST WORDS MUST CONTAIN EVERY INFO WE NEED FOR THAT POOLS JOBS
-//PUT THAT IN AN ARRAY
+			read(p_info->receive_fd, message, BUFSIZE);
+			fprintf(stderr, "Pool %d (%d) finished\n",p_info->id, p_info->pid);
 
 			close(p_info->receive_fd);
 			close(p_info->send_fd);
@@ -140,7 +141,8 @@ int main(int argc, char* argv[])
 					p_info = malloc(sizeof(pool_info));
 					p_info->id = pool_counter;
 					p_info->status = 0;
-					p_info->jobs = NULL;
+					p_info->active_count = 0;
+					p_info->jobs = malloc(pool_max*sizeof(job_info));
 
 					//Make pipes for communication with pool
 					if ( (mkfifo(pool_pipe_in, PERMS) < 0) && (errno != EEXIST) )
@@ -169,7 +171,7 @@ int main(int argc, char* argv[])
 					free(job_count_str);
 
 					//Open pipes (block until pool opens them as well)
-					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY | O_NONBLOCK)) < 0)
+					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY)) < 0)
 					{
 						perror("Cannot open jms_in pipe");
 					}
@@ -195,27 +197,62 @@ int main(int argc, char* argv[])
 
 				//The pool to handle this submit is there (maybe just created).Forward the submit command
 				p_info = pool_list_get_last(p_list);//get info for the correct pool (the last there is)
+				p_info->active_count++;
 
-				if (p_info->status == 0)//If it is still running
-				{//Forward the message
-					fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
-					write(p_info->send_fd, command, BUFSIZE);
-				}
-				else
-				{
-					fprintf(stderr, "Coord: This pool has finished!Need to access its last words array\n");
-				}
-				
+				//Note info for this job
+				i = job_counter % pool_max;
+				(p_info->jobs)[i].id = job_counter + 1;
+				(p_info->jobs)[i].status = 0;//Note that this job is running 
+				//Forward the message
+				fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
+				write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
+				(p_info->jobs)[i].start_time = time(NULL);
+
 				job_counter++;
+			}
+			else if ( !strcmp(command_type, "suspend") )
+			{
+
+			}
+			else if ( !strcmp(command_type, "resume") )
+			{
+
 			}
 			else if ( !strcmp(command_type, "shutdown") )
 			{
 				running = 0;
 			}
+			else //If its not a submit,suspend,resume,shutdown command,console will request some info
+			{//we need to retrieve information form pools
+				//first send a message to each pool to request info/update on the jobs
+				pool = p_list->first;
 
-			//SEND MESSAGE TO CORRECT POOL AND WAIT FOR REPLY
-			strcpy(message, "OK\n");
-			write(send_fd, message, BUFSIZE);
+				while (pool != NULL)//until we reach the end of the pool list
+				{
+					strcpy(message, "info");
+					write(pool->info->send_fd, message, BUFSIZE);
+					
+					read(pool->info->receive_fd, reply, BUFSIZE);
+					finished_job_id = atoi(reply);
+
+					while (finished_job_id != -1)
+					{
+						fprintf(stderr, "Coord: Pool told me that job %d is done\n", finished_job_id);
+						i = (finished_job_id - 1) % pool_max;
+						((pool->info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
+
+						read(pool->info->receive_fd, reply, BUFSIZE);
+						finished_job_id = atoi(reply);
+					}
+					
+
+					pool = pool->next;
+				}
+
+			}
+
+			//SEND MESSAGE/REPLY TO CONSOLE
+			write(send_fd, reply, BUFSIZE);
 			free(command);
 		}
 	}

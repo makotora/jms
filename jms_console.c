@@ -21,7 +21,7 @@ int main(int argc, char* argv[])
 	char * jms_out = NULL;
 	int send_fd, receive_fd;
 	int pid, coord_pid;
-	char message[1024];
+	char message[BUFSIZE];
 
 	//Read Arguments
 	//..

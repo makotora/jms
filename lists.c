@@ -138,6 +138,8 @@ void pool_list_free(pool_list** list_ptr_ptr)
 	{
 		target = current;
 		current = current->next;
+
+		free(target->info->jobs);
 		free(target->info);
 		free(target);
 	}

@@ -13,17 +13,17 @@
 
 #define BUFSIZE 1024
 
-#include "lists.h"
+#include "lists.h" 
 #include "functions.h"
-#include "input.h"
 #include "arglist.h"
+#include "queue.h"
 
 
 int main(int argc, char* argv[])
 {
 	int send_fd, receive_fd;
 	int pid, coord_pid;
-	char message[1024];
+	char message[BUFSIZE];
 	char job_dir[100];
 	char open_dir[100];
 	int fd_stdout, fd_stderr;
@@ -48,7 +48,7 @@ int main(int argc, char* argv[])
 
 	//Send pid to coord
 	pid = getpid();
-	fprintf(stderr, "Pool %d: My pid is %d.Sending it to coord\n", pool_no, pid);
+	fprintf(stderr, "\tPool %d: My pid is %d.Sending it to coord\n", pool_no, pid);
 	sprintf(message, "%d", pid);
 	write(send_fd, message, BUFSIZE);
 
@@ -59,22 +59,30 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	read(receive_fd, message, BUFSIZE);//Receive coords pid
+	//Receive coords pid (wait for him to write it)
+	while(read(receive_fd, message, BUFSIZE) == -1);
+	
 	coord_pid = atoi(message);
-	fprintf(stderr, "Pool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
+	fprintf(stderr, "\tPool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
 
 	//HANDLE INCOMING MESSAGES
-	int finished_jobs;
+	int finished_jobs, coord_replied;
 	int job_pid, job_status;
 	char timestr[7];
 	char datestr[9];
+	char* pop;
 	job_list* j_list;
 	job_info* j_info;
+	queue* message_queue;
 
 	j_list = job_list_create();
+	message_queue = queue_create();
 
 	finished_jobs = 0;
-	while (finished_jobs < max_jobs)
+	coord_replied = 0;
+
+	//Pool finishes when max jobs jobs are finished AND we delivered all messages to coord
+	while (finished_jobs < max_jobs || !queue_is_empty(message_queue))
 	{
 		job_pid = waitpid(-1, &job_status, WNOHANG);/*Check if any job has finished*/
 
@@ -88,13 +96,18 @@ int main(int argc, char* argv[])
 			}
 			j_info->status = 1;//note that this job is finished
 
-			fprintf(stderr, "Pool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
+			fprintf(stderr, "\tPool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
 			finished_jobs++;
+
+			//Add a message to the message (to be sent to coord)
+			//saying that this job has finished
+			sprintf(message, "%d", j_info->id);
+			queue_push(message_queue, message);
 		}
 
 		if (read(receive_fd, message, BUFSIZE) > 0)
 		{
-			fprintf(stderr, "Pool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
+			fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
 			token = strtok(message, " \t\n");//get first word of message to see the type
 
 			if (!strcmp(token, "submit"))
@@ -164,6 +177,27 @@ int main(int argc, char* argv[])
 				j_info->start_time = time(NULL);
 
 				job_list_add(j_list, j_info);
+
+				//Reply to coord (job id and pid)
+				sprintf(message, "JobID: %d, PID: %d", job_counter, job_pid);
+				write(send_fd, message, BUFSIZE);
+			}
+			else if (!strcmp(token, "info"))//My own command that is used to ask pools for info
+			{
+				//Send all messages in message_queue
+				while ( queue_is_empty(message_queue) == 0 )
+				{
+					pop = queue_pop(message_queue);
+					strcpy(message, pop);
+					free(pop);
+					fprintf(stderr, "\tPool %d: Sending info: %s\n", pool_no, message);
+					write(send_fd, message, BUFSIZE);
+
+				}
+
+				//Send end of communication message -1
+				strcpy(message, "-1");
+				write(send_fd, message, BUFSIZE);
 			}
 		
 
@@ -171,6 +205,8 @@ int main(int argc, char* argv[])
 
 	}
 
+
+	queue_free(&message_queue);
 	job_list_free(&j_list);
 	close(send_fd);
 	close(receive_fd);

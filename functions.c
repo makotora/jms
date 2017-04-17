@@ -1,6 +1,6 @@
 #include "functions.h"
 
-int write_and_read(char* message, int readfd, int writefd)
+int write_and_read(char* message, char* reply, int readfd, int writefd)
 {
 	//Write the message to the out pipe
 	if (write(writefd, message, BUFSIZE) != BUFSIZE)
@@ -9,14 +9,9 @@ int write_and_read(char* message, int readfd, int writefd)
 		return -1;
 	}
 
-	//Wait (by blocking) for receiver to (reply) write to the in pipe (his out pipe)
-	if (read(readfd, message, BUFSIZE) <= 0)
-	{
-		fprintf(stderr, "Pipe has no writers.Cannot read!\n");
-		return -3;
-	}
-	//Print reply
-	// fprintf(stderr, "%s\n", message);
+	//Wait for receiver to (reply) write to the in pipe (his out pipe)
+	//This works for both blocking and non blocking pipes (no loops for blocking pipes)
+	while (read(readfd, reply, BUFSIZE) < 0);
 
 	return 0;
 }
