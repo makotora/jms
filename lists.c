@@ -65,14 +65,16 @@ job_info* job_list_getby_id(job_list* list_ptr, int id)
 {
 	job_node* current = list_ptr->first;
 
-	int i;
-
-	for (i=0;i<id;i++)
+	while (current != NULL)
 	{
+		if (current->info->id == id)
+			return current->info;
+
 		current = current->next;
 	}
+	
 
-	return current->info;
+	return NULL;//no job with this id
 }
 
 job_info* job_list_getby_pid(job_list* list_ptr, int pid)
@@ -97,7 +99,6 @@ void job_info_print(job_info info)
 	fprintf(stderr, "> JOB %d <\n",info.id);
 	fprintf(stderr, "PID: %d\n",info.pid);
 	fprintf(stderr, "STATUS: %d\n",info.status);
-	fprintf(stderr, "Start time: %d\n",info.start_time);
 }
 
 
@@ -180,7 +181,7 @@ pool_info* pool_list_getby_id(pool_list* list_ptr, int id)
 
 	int i;
 
-	for (i=0;i<id;i++)
+	for (i=1;i<id;i++)
 	{
 		current = current->next;
 	}

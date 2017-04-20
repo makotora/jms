@@ -6,6 +6,15 @@
 #include <time.h>
 
 
+typedef struct job_stats job_stats;
+
+struct job_stats
+{
+	int id;
+	int status;/*-1: suspended, 0 running, 1 finished*/
+	int start_time;
+};
+
 typedef struct job_info job_info;
 typedef struct job_node job_node;
 typedef struct job_list job_list;
@@ -19,7 +28,6 @@ struct job_info
 	int id;
 	int pid;
 	int status;/*-1: suspended, 0 running, 1 finished*/
-	int start_time;
 };
 
 struct job_node
@@ -50,7 +58,7 @@ struct pool_info
 	int active_count;
 	int send_fd;
 	int receive_fd;
-	job_info* jobs;
+	job_stats* jobs;
 };
 
 struct pool_node

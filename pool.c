@@ -66,8 +66,8 @@ int main(int argc, char* argv[])
 	fprintf(stderr, "\tPool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
 
 	//HANDLE INCOMING MESSAGES
-	int finished_jobs, coord_replied;
-	int job_pid, job_status;
+	int finished_jobs;
+	int job_id, job_pid, job_status;
 	char timestr[7];
 	char datestr[9];
 	char* pop;
@@ -79,7 +79,6 @@ int main(int argc, char* argv[])
 	message_queue = queue_create();
 
 	finished_jobs = 0;
-	coord_replied = 0;
 
 	//Pool finishes when max jobs jobs are finished AND we delivered all messages to coord
 	while (finished_jobs < max_jobs || !queue_is_empty(message_queue))
@@ -112,13 +111,6 @@ int main(int argc, char* argv[])
 
 			if (!strcmp(token, "submit"))
 			{
-				//Start making a new node in the list for this job
-				job_counter++;
-				
-				j_info = malloc(sizeof(job_info));
-				j_info->id = job_counter;
-				j_info->status = 0;
-
 				//Put arguments for the job creation (execv) in the array.Ending it with NULL!
 				arglist_create(&arglist);
 				token = strtok(NULL, " \t\n");
@@ -173,14 +165,18 @@ int main(int argc, char* argv[])
 				free(job_args);
 				arglist_free(&arglist);
 
-				j_info->pid = job_pid;
-				j_info->start_time = time(NULL);
 
+				//Make a new node for this job and add it to the joblist
+				job_counter++;
+				
+				j_info = malloc(sizeof(job_info));
+				j_info->id = job_counter;
+				j_info->pid = job_pid;
+				j_info->status = 0;
 				job_list_add(j_list, j_info);
 
 				//Reply to coord (job id and pid)
-				sprintf(message, "JobID: %d, PID: %d", job_counter, job_pid);
-				write(send_fd, message, BUFSIZE);
+				sprintf(message, "JobID: %d, PID: %d\n", job_counter, job_pid);
 			}
 			else if (!strcmp(token, "info"))//My own command that is used to ask pools for info
 			{
@@ -197,10 +193,37 @@ int main(int argc, char* argv[])
 
 				//Send end of communication message -1
 				strcpy(message, "-1");
-				write(send_fd, message, BUFSIZE);
+			}
+			else if (!strcmp(token, "suspend"))
+			{
+				job_id = atoi(strtok(NULL, " \t\n"));
+				j_info = job_list_getby_id(j_list, job_id);
+
+				if ( kill(j_info->pid, 19) == 0 )//if signal is sent succesfully
+				{
+					strcpy(message, "0");//send success message to coord
+				}
+				else
+				{
+					strcpy(message, "-1");//send fail message to coord (job is already finished)	
+				}
+			}
+			else if (!strcmp(token, "resume"))
+			{
+				job_id = atoi(strtok(NULL, " \t\n"));
+				j_info = job_list_getby_id(j_list, job_id);
+
+				if ( kill(j_info->pid, 18) == 0 )//if signal is sent succesfully
+				{
+					strcpy(message, "0");//send success message to coord
+				}
+				else
+				{
+					strcpy(message, "-1");//send fail message to coord (job is already finished)	
+				}
 			}
 		
-
+			write(send_fd, message, BUFSIZE);//send message to coord
 		}
 
 	}

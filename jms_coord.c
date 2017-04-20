@@ -26,7 +26,6 @@ int main(int argc, char* argv[])
 	char * jms_in = NULL;
 	char * jms_out = NULL;
 	int receive_fd, send_fd;
-	int status;
 	int pid, console_pid;
 	char message[BUFSIZE];
 	char reply[BUFSIZE];
@@ -89,7 +88,8 @@ int main(int argc, char* argv[])
 	int pool_counter = 0;
 	int job_counter = 0;
 	int pool_pid, pool_status;
-	int finished_job_id, i;
+	int reply_code;
+	int finished_job_id, i, job_id;
 	char* command;
 	char* command_type;
 	pool_list* p_list;
@@ -137,13 +137,6 @@ int main(int argc, char* argv[])
 					sprintf(pool_pipe_in, "pipe%d_in", pool_counter);
 					sprintf(pool_pipe_out, "pipe%d_out", pool_counter);
 
-					//Start making a new node in the list for this pool
-					p_info = malloc(sizeof(pool_info));
-					p_info->id = pool_counter;
-					p_info->status = 0;
-					p_info->active_count = 0;
-					p_info->jobs = malloc(pool_max*sizeof(job_info));
-
 					//Make pipes for communication with pool
 					if ( (mkfifo(pool_pipe_in, PERMS) < 0) && (errno != EEXIST) )
 					{
@@ -169,6 +162,13 @@ int main(int argc, char* argv[])
 					}
 
 					free(job_count_str);
+
+					//Start making a new node in the list for this pool
+					p_info = malloc(sizeof(pool_info));
+					p_info->id = pool_counter;
+					p_info->status = 0;
+					p_info->active_count = 0;
+					p_info->jobs = malloc(pool_max*sizeof(job_stats));
 
 					//Open pipes (block until pool opens them as well)
 					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY)) < 0)
@@ -199,56 +199,211 @@ int main(int argc, char* argv[])
 				p_info = pool_list_get_last(p_list);//get info for the correct pool (the last there is)
 				p_info->active_count++;
 
-				//Note info for this job
-				i = job_counter % pool_max;
-				(p_info->jobs)[i].id = job_counter + 1;
-				(p_info->jobs)[i].status = 0;//Note that this job is running 
 				//Forward the message
 				fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 				write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
-				(p_info->jobs)[i].start_time = time(NULL);
 
 				job_counter++;
+				//Note info for this job
+				i = job_counter % pool_max;
+				(p_info->jobs)[i].id = job_counter;
+				(p_info->jobs)[i].status = 0;//Note that this job is running 
+				(p_info->jobs)[i].start_time = time(NULL);
 			}
-			else if ( !strcmp(command_type, "suspend") )
+			else if ( !strcmp(command_type, "suspend"))
 			{
+				job_id = atoi(strtok(NULL, " \t\n"));
 
+				if (job_id > 0 && job_id <= job_counter)
+				{
+					//get pool_info of the pool responsible for this job_id
+					i = (job_id-1) / pool_max;
+					p_info = pool_list_getby_id(p_list, i+1);//+1 because counting starts from 1 for ids
+
+					i = (job_id-1) % pool_max;//index for this job in this pools job array
+
+					//if job is still runnning
+					if (p_info->jobs[i].status == 0)
+					{
+						//forward suspend message to that pool
+						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
+						//pool will send back a reply for the command
+						//0 means OK
+						//-1 means FAIL.job is already done.
+						/*
+						To explain:I DONT request info from pools about which jobs are finished
+						for commands suspend,resume shutdown.I just receive reply.
+						Also there is a chance that a job finishes right before suspending it
+						so I let the pool do the checking..
+						*/
+						reply_code = atoi(reply);
+
+						if (reply_code == 0)//ok
+						{
+							p_info->jobs[i].status = -1;//not that this job is now suspended
+							sprintf(reply, "Sent suspend signal to job %d!\n", job_id);
+						}
+						else//reply_code == -1 , meaning that job is finished but coord didnt know yet
+						{
+							p_info->jobs[i].status = 1;//not that this job is now finished
+							sprintf(reply, "Cannot suspend.Job %d has finished!\n", job_id);
+						}
+					}
+					else if (p_info->jobs[i].status == -1)//if its suspended
+					{
+						sprintf(reply, "Cannot suspend.Job %d is already suspended!\n", job_id);
+					}
+					else //status == 1 (finished)
+					{
+						sprintf(reply, "Cannot suspend.Job %d has finished!\n", job_id);	
+					}
+				}
+				else
+				{
+					sprintf(reply, "Cannot suspend.No job with ID %d", job_id);
+				}
 			}
-			else if ( !strcmp(command_type, "resume") )
+			else if ( !strcmp(command_type, "resume"))
 			{
+				job_id = atoi(strtok(NULL, " \t\n"));
 
+				if (job_id > 0 && job_id <= job_counter)
+				{
+					//get pool_info of the pool responsible for this job_id
+					i = (job_id-1) / pool_max;
+					p_info = pool_list_getby_id(p_list, i+1);//+1 because counting starts from 1 for ids
+
+					i = (job_id-1) % pool_max;//index for this job in this pools job array
+
+					//Note that if a pool is finished <=> every job (of that pool) has finished
+					if (p_info->jobs[i].status == -1)//if its suspended
+					{
+						//forward suspend message to that pool
+						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
+						//pool will send back a reply for the command
+						//0 means OK
+						//-1 means Fail.job is already done.
+
+						reply_code = atoi(reply);
+
+						if (reply_code == 0)//ok
+						{
+							p_info->jobs[i].status = 0;//not that this job is now running
+							sprintf(reply, "Sent resume signal to job %d!\n", job_id);
+						}
+						else//reply_code == -1 , meaning that job is finished but coord didnt know yet
+						{
+							p_info->jobs[i].status = 1;//not that this job is now finished
+							sprintf(reply, "Cannot resume.Job %d has finished!\n", job_id);
+						}
+					}
+					else if (p_info->jobs[i].status == 0)//if its running
+					{
+						sprintf(reply, "Cannot resume.Job %d is already running!\n", job_id);
+					}
+					else //status == 1 (finished)
+					{
+						sprintf(reply, "Cannot resume.Job %d has finished!\n", job_id);	
+					}
+				}
+				else
+				{
+					sprintf(reply, "Cannot suspend.No job with ID %d", job_id);
+				}
+			}
+			else if ( !strcmp(command_type, "status"))
+			{
+				job_id = atoi(strtok(NULL, " \t\n"));
+
+				if (job_id > 0 && job_id <= job_counter)
+				{
+					//get pool_info of the pool responsible for this job_id
+					i = (job_id-1) / pool_max;
+					p_info = pool_list_getby_id(p_list, i+1);//+1 because counting starts from 1 for ids
+
+					i = (job_id-1) % pool_max;//index for this job in this pools job array
+
+					//if job is suspended
+					if (p_info->jobs[i].status == -1)
+					{
+						sprintf(reply, "JobID %d Status: Suspended\n", job_id);
+					}
+					else //job is not suspended.So its either running or finished.We dont know yet
+					{//Ask its pool for info
+						if (p_info->status == 0) //If this pool isnt finished yet
+						{
+							strcpy(message, "info");//request info/update from that pool
+							write(p_info->send_fd, message, BUFSIZE);
+							
+							read(p_info->receive_fd, reply, BUFSIZE);
+							finished_job_id = atoi(reply);
+
+							while (finished_job_id != -1)//until pool sends -1 (for end of communication)
+							{
+								fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", p_info->id , finished_job_id);
+								i = (finished_job_id - 1) % pool_max;
+								((p_info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
+								read(p_info->receive_fd, reply, BUFSIZE);
+								finished_job_id = atoi(reply);
+							}
+						}
+						//NOW THAT WE GOT INFO/UPDATE FROM THIS POOL.CHECK THE JOB'S STATUS
+
+						//if job is still runnning
+						if (p_info->jobs[i].status == 0)
+						{
+							sprintf(reply, "JobID %d Status: Active (running for %ld sec)\n",
+							 job_id, time(NULL) - p_info->jobs[i].start_time);
+						}
+						//if job is finished (its not suspended.we checked that above)
+						else // status == 1
+						{
+							sprintf(reply, "JobID %d Status: Finished\n", job_id);	
+						}
+
+					}
+
+				}
+				else
+				{
+					sprintf(reply, "No job with ID %d", job_id);
+				}
 			}
 			else if ( !strcmp(command_type, "shutdown") )
 			{
 				running = 0;
 			}
-			else //If its not a submit,suspend,resume,shutdown command,console will request some info
-			{//we need to retrieve information form pools
-				//first send a message to each pool to request info/update on the jobs
+			else
+			{ 
+			//If its not a submit,suspend,resume,status,shutdown command
+			//It will be a command that needs info from all pools
+			//first send a message to each pool to request info/update on the jobs status
 				pool = p_list->first;
 
 				while (pool != NULL)//until we reach the end of the pool list
 				{
-					strcpy(message, "info");
-					write(pool->info->send_fd, message, BUFSIZE);
-					
-					read(pool->info->receive_fd, reply, BUFSIZE);
-					finished_job_id = atoi(reply);
-
-					while (finished_job_id != -1)
+					if (pool->info->status == 0) //If this pool isnt finished yet
 					{
-						fprintf(stderr, "Coord: Pool told me that job %d is done\n", finished_job_id);
-						i = (finished_job_id - 1) % pool_max;
-						((pool->info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
-
+						strcpy(message, "info");//request info
+						write(pool->info->send_fd, message, BUFSIZE);
+						
 						read(pool->info->receive_fd, reply, BUFSIZE);
 						finished_job_id = atoi(reply);
+
+						while (finished_job_id != -1)//until pool sends -1 (for end of communication)
+						{
+							fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", pool->info->id, finished_job_id);
+							pool->info->active_count--;
+							i = (finished_job_id - 1) % pool_max;
+							((pool->info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
+
+							read(pool->info->receive_fd, reply, BUFSIZE);
+							finished_job_id = atoi(reply);
+						}
 					}
-					
 
 					pool = pool->next;
 				}
-
 			}
 
 			//SEND MESSAGE/REPLY TO CONSOLE

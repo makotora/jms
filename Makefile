@@ -6,10 +6,7 @@ CC = gcc
 CFLAGS= -c -Wall $(DEBUG)
 LFLAGS= -Wall $(DEBUG)
 
-all: jms_coord jms_console pool
-
-test: $(OBJS2)
-	$(CC) $(LFLAGS) $(OBJS2) -o test
+all: jms_coord jms_console pool sleep
 
 jms_coord: jms_coord.o functions.o lists.o
 	$(CC) $(LFLAGS) jms_coord.o functions.o lists.o -o jms_coord
@@ -19,6 +16,9 @@ jms_console: jms_console.o functions.o input.o
 
 pool: pool.o functions.o lists.o arglist.o queue.o
 	$(CC) $(LFLAGS) pool.o functions.o lists.o queue.o arglist.o -o pool
+
+sleep: sleep.o
+	$(CC) $(LFLAGS) sleep.o -o sleep
 
 jms_coord.o: jms_coord.c
 	$(CC) $(CFLAGS) jms_coord.c
@@ -44,8 +44,8 @@ input.o: input.c input.h
 arglist.o: arglist.c arglist.h
 	$(CC) $(CFLAGS) arglist.c
 
-tests.o: tests.c
-	$(CC) $(CFLAGS) tests.c	
+sleep.o: sleep.c
+	$(CC) $(CFLAGS) sleep.c
 
 clean:
 	rm -f $(OBJS) $(OBJS2) jms_console jms_coord test pool
