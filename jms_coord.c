@@ -16,6 +16,7 @@
 
 #include "functions.h"
 #include "lists.h"
+#include "mystring.h"
 
 
 int main(int argc, char* argv[])
@@ -89,13 +90,16 @@ int main(int argc, char* argv[])
 	int job_counter = 0;
 	int pool_pid, pool_status;
 	int reply_code;
-	int i, job_id;
+	int i, j, job_id, time_duration, q_time, counter, job_limit;
 	char* command;
-	char* command_type;
+	char* token;
 	pool_list* p_list;
 	pool_node* pool;
 	pool_info* p_info;
+	mystring* mstring;
+
 	p_list = pool_list_create();
+	mstring = mystring_create(BUFSIZE);
 
 	int running = 1;
 
@@ -151,10 +155,10 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "Coord: Console sent me: %s\n", message);
 			command = malloc((strlen(message) + 1)*sizeof(char));
 			strcpy(command, message);
-			command_type = strtok(message, " \t\n");//get first word of message to see the type
+			token = strtok(message, " \t\n");//get first word of message to see the type
 
 			/*If its a submit command check if we need to create a new pool*/
-			if (!strcmp(command_type, "submit"))
+			if (!strcmp(token, "submit"))
 			{
 				if (job_counter % pool_max == 0)
 				{
@@ -254,7 +258,250 @@ int main(int argc, char* argv[])
 				(p_info->jobs)[i].status = 0;//Note that this job is running 
 				(p_info->jobs)[i].start_time = time(NULL);
 			}
-			else if ( !strcmp(command_type, "suspend"))
+			else if ( !strcmp(token, "status"))
+			{
+				job_id = atoi(strtok(NULL, " \t\n"));
+
+				if (job_id > 0 && job_id <= job_counter)
+				{
+					//get pool_info of the pool responsible for this job_id
+					i = (job_id-1) / pool_max;
+					p_info = pool_list_getby_id(p_list, i+1);//+1 because counting starts from 1 for ids
+
+					i = (job_id-1) % pool_max;//index for this job in this pools job array
+
+					//if job is suspended
+					if (p_info->jobs[i].status == -1)
+					{
+						sprintf(reply, "JobID %d Status: Suspended\n", job_id);
+					}
+					//if job is still runnning
+					else if (p_info->jobs[i].status == 0)
+					{
+						sprintf(reply, "JobID %d Status: Active (running for %ld sec)\n",
+						 job_id, time(NULL) - p_info->jobs[i].start_time);
+					}
+					//if job is finished (its not suspended.we checked that above)
+					else // status == 1
+					{
+						sprintf(reply, "JobID %d Status: Finished\n", job_id);	
+					}
+				}
+				else
+				{
+					sprintf(reply, "No job with ID %d", job_id);
+				}
+			}
+			else if ( !strcmp(token, "status-all"))
+			{
+				token = strtok(NULL, " \t\n");
+				counter = 0;
+				q_time = time(NULL);//not question time
+
+				time_duration = -1;
+				if (token != NULL)//if command includes time-duration
+				{
+					time_duration = atoi(token);
+				}
+
+				pool = p_list->first;
+
+				//for all pools besides the last
+				job_limit = pool_max;
+				for (i=0;i<pool_counter-1;i++)
+				{
+					//for all jobs in this pool
+					for (j=0;j<job_limit;j++)
+					{
+						//if time_duration doesnt matter (wasnt asked)
+						//or it was submited at most 'time_duration' seconds ago
+						if (time_duration == -1 ||
+							q_time - pool->info->jobs[j].start_time <= time_duration)
+						{
+							counter++;
+							job_id = pool->info->jobs[j].id;
+
+							if (pool->info->jobs[j].status == -1)
+							{
+								sprintf(reply, "%d. JobID %d Status: Suspended\n", counter, job_id);
+							}
+							//if job is still runnning
+							else if (pool->info->jobs[j].status == 0)
+							{
+								sprintf(reply, "%d. JobID %d Status: Active (running for %ld sec)\n",
+								 counter, job_id, q_time - p_info->jobs[i].start_time);
+							}
+							//if job is finished (its not suspended.we checked that above)
+							else // status == 1
+							{
+								sprintf(reply, "%d. JobID %d Status: Finished\n", counter, job_id);	
+							}
+
+							mystring_add(mstring, reply);
+						}
+					}
+
+					pool = pool->next;
+				}
+				//for the last pool (that may not be "full")
+				job_limit = job_counter % pool_max;
+				for (j=0;j<job_limit;j++)
+				{
+					//if time_duration doesnt matter (wasnt asked)
+					//or it was submited at most 'time_duration' seconds ago
+					if (time_duration == -1 ||
+							q_time - pool->info->jobs[j].start_time <= time_duration)
+					{
+						counter++;
+						job_id = pool->info->jobs[j].id;
+
+						if (pool->info->jobs[j].status == -1)
+						{
+							sprintf(reply, "%d. JobID %d Status: Suspended\n", counter, job_id);
+						}
+						//if job is still runnning
+						else if (pool->info->jobs[j].status == 0)
+						{
+							sprintf(reply, "%d. JobID %d Status: Active (running for %ld sec)\n",
+							 counter, job_id, q_time - p_info->jobs[i].start_time);
+						}
+						//if job is finished (its not suspended.we checked that above)
+						else // status == 1
+						{
+							sprintf(reply, "%d. JobID %d Status: Finished\n", counter, job_id);	
+						}
+
+						mystring_add(mstring, reply);
+					}
+				}
+				if (mstring->size != 0)
+				{
+					strcpy(reply, mstring->string);//Copy the string we build to the final reply string
+					mystring_clear(mstring);//clear the string that was built
+				}
+				else
+				{//no results
+					strcpy(reply, "Nothing to show.\n");
+				}	
+			}
+			else if ( !strcmp(token, "show-active"))
+			{
+				mystring_add(mstring, "Active jobs:\n");
+				counter = 0;
+				pool = p_list->first;
+
+				//for all pools besides the last
+				job_limit = pool_max;
+				for (i=0;i<pool_counter-1;i++)
+				{
+					//for all jobs in this pool
+					for (j=0;j<job_limit;j++)
+					{
+						if (pool->info->jobs[j].status != 1)//if job is not finished.it is active
+						{
+							counter++;
+							job_id = pool->info->jobs[j].id;
+							sprintf(reply, "\t%d. JobID %d\n", counter, job_id);
+							mystring_add(mstring, reply);
+						}
+					}
+
+					pool = pool->next;
+				}
+				//for the last pool (that may not be "full")
+				job_limit = job_counter % pool_max;
+				for (j=0;j<job_limit;j++)
+				{
+					if (pool->info->jobs[j].status != 1)//if job is not finished.it is active
+					{
+						counter++;
+						job_id = pool->info->jobs[j].id;
+						sprintf(reply, "\t%d. JobID %d\n", counter, job_id);
+						mystring_add(mstring, reply);
+					}
+				}
+
+				if (counter == 0)
+				{
+					mystring_add(mstring, "\tNothing to show.\n");	
+				}
+
+				strcpy(reply, mstring->string);//Copy the string we build to the final reply string
+				mystring_clear(mstring);//clear the string that was built
+			}
+			else if ( !strcmp(token, "show-pools"))
+			{
+				mystring_add(mstring, "PoolPid & NumberOfJobs:\n");
+				counter = 0;
+				pool = p_list->first;
+
+				while (pool != NULL)
+				{
+					if (pool->info->status == 0)//if this pool is still running
+					{
+						counter++;
+						sprintf(reply, "\t%d. %d %d\n", 
+							counter, pool->info->pid, pool->info->job_count - pool->info->finished_count);
+						mystring_add(mstring, reply);
+					}
+
+					pool = pool->next;
+				}
+
+				if (counter == 0)
+				{
+					mystring_add(mstring, "\tNothing to show.\n");	
+				}
+
+				strcpy(reply, mstring->string);//Copy the string we build to the final reply string
+				mystring_clear(mstring);//clear the string that was built
+			}
+			else if ( !strcmp(token, "show-finished"))
+			{
+				mystring_add(mstring, "Finished jobs:\n");
+				counter = 0;
+				pool = p_list->first;
+
+				//for all pools besides the last
+				job_limit = pool_max;
+				for (i=0;i<pool_counter-1;i++)
+				{
+					//for all jobs in this pool
+					for (j=0;j<job_limit;j++)
+					{
+						if (pool->info->jobs[j].status == 1)//if job is finished
+						{
+							counter++;
+							job_id = pool->info->jobs[j].id;
+							sprintf(reply, "\t%d. JobID %d\n", counter, job_id);
+							mystring_add(mstring, reply);
+						}
+					}
+
+					pool = pool->next;
+				}
+				//for the last pool (that may not be "full")
+				job_limit = job_counter % pool_max;
+				for (j=0;j<job_limit;j++)
+				{
+					if (pool->info->jobs[j].status == 1)//if job is finished
+					{
+						counter++;
+						job_id = pool->info->jobs[j].id;
+						sprintf(reply, "\t%d. JobID %d\n", counter, job_id);
+						mystring_add(mstring, reply);
+					}
+				}
+
+				if (counter == 0)
+				{
+					mystring_add(mstring, "\tNothing to show.\n");	
+				}
+
+				strcpy(reply, mstring->string);//Copy the string we build to the final reply string
+				mystring_clear(mstring);//clear the string that was built
+			}
+			else if ( !strcmp(token, "suspend"))
 			{
 				job_id = atoi(strtok(NULL, " \t\n"));
 
@@ -325,7 +572,7 @@ int main(int argc, char* argv[])
 					sprintf(reply, "Cannot suspend.No job with ID %d", job_id);
 				}
 			}
-			else if ( !strcmp(command_type, "resume"))
+			else if ( !strcmp(token, "resume"))
 			{
 				job_id = atoi(strtok(NULL, " \t\n"));
 
@@ -392,41 +639,7 @@ int main(int argc, char* argv[])
 					sprintf(reply, "Cannot suspend.No job with ID %d", job_id);
 				}
 			}
-			else if ( !strcmp(command_type, "status"))
-			{
-				job_id = atoi(strtok(NULL, " \t\n"));
-
-				if (job_id > 0 && job_id <= job_counter)
-				{
-					//get pool_info of the pool responsible for this job_id
-					i = (job_id-1) / pool_max;
-					p_info = pool_list_getby_id(p_list, i+1);//+1 because counting starts from 1 for ids
-
-					i = (job_id-1) % pool_max;//index for this job in this pools job array
-
-					//if job is suspended
-					if (p_info->jobs[i].status == -1)
-					{
-						sprintf(reply, "JobID %d Status: Suspended\n", job_id);
-					}
-					//if job is still runnning
-					else if (p_info->jobs[i].status == 0)
-					{
-						sprintf(reply, "JobID %d Status: Active (running for %ld sec)\n",
-						 job_id, time(NULL) - p_info->jobs[i].start_time);
-					}
-					//if job is finished (its not suspended.we checked that above)
-					else // status == 1
-					{
-						sprintf(reply, "JobID %d Status: Finished\n", job_id);	
-					}
-				}
-				else
-				{
-					sprintf(reply, "No job with ID %d", job_id);
-				}
-			}
-			else if ( !strcmp(command_type, "shutdown") )
+			else if ( !strcmp(token, "shutdown") )
 			{
 				running = 0;
 			}
@@ -441,6 +654,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	mystring_free(&mstring);
 	pool_list_free(&p_list);
 
 	close(receive_fd);

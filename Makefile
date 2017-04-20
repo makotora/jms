@@ -1,21 +1,21 @@
-OBJS = jms_coord.o jms_console.o pool.o
-OBJS2 = functions.o lists.o input.o tests.o arglist.o queue.o
-SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c tests.c pool.c arglist.c queue.c
-HEADER = functions.h lists.h input.h arglist.h queue.h
+OBJS = jms_coord.o jms_console.o pool.o sleep.o
+OBJS2 = functions.o lists.o input.o tests.o arglist.o mystring.o
+SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c tests.c pool.c arglist.c mystring.c
+HEADER = functions.h lists.h input.h arglist.h mystring.h
 CC = gcc
 CFLAGS= -c -Wall $(DEBUG)
 LFLAGS= -Wall $(DEBUG)
 
 all: jms_coord jms_console pool sleep
 
-jms_coord: jms_coord.o functions.o lists.o
-	$(CC) $(LFLAGS) jms_coord.o functions.o lists.o -o jms_coord
+jms_coord: jms_coord.o functions.o lists.o mystring.o
+	$(CC) $(LFLAGS) jms_coord.o functions.o lists.o mystring.o -o jms_coord
 
 jms_console: jms_console.o functions.o input.o
 	$(CC) $(LFLAGS) jms_console.o functions.o input.o -o jms_console
 
-pool: pool.o functions.o lists.o arglist.o queue.o
-	$(CC) $(LFLAGS) pool.o functions.o lists.o queue.o arglist.o -o pool
+pool: pool.o functions.o lists.o arglist.o
+	$(CC) $(LFLAGS) pool.o functions.o lists.o arglist.o -o pool
 
 sleep: sleep.o
 	$(CC) $(LFLAGS) sleep.o -o sleep
@@ -35,8 +35,8 @@ functions.o: functions.c functions.h
 lists.o: lists.c lists.h
 	$(CC) $(CFLAGS) lists.c
 
-queue.o: queue.c queue.h
-	$(CC) $(CFLAGS) queue.c
+mystring.o: mystring.c mystring.h
+	$(CC) $(CFLAGS) mystring.c
 
 input.o: input.c input.h
 	$(CC) $(CFLAGS) input.c	
@@ -48,7 +48,7 @@ sleep.o: sleep.c
 	$(CC) $(CFLAGS) sleep.c
 
 clean:
-	rm -f $(OBJS) $(OBJS2) jms_console jms_coord test pool
+	rm -f $(OBJS) $(OBJS2) jms_console jms_coord pool sleep
 
 count:
 	wc $(SOURCE) $(HEADER)

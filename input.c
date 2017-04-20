@@ -96,14 +96,22 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 				continue;
 			}
 		}
+		else if ( !strcmp(words[0], "status-all") )//status-all has 1 or 2 arguments
+		{
+			if (words[2] != NULL) //Too many arguments!Must be 2
+			{
+				fprintf(stderr, "Too many arguments! status-all requires at most 1 argument!\n");
+				continue;
+			}
+		}
 		else
 		{
-			if (!strcmp(words[0], "status-all") || !strcmp(words[0], "show-active") || !strcmp(words[0], "show-pools")
+			if (!strcmp(words[0], "show-active") || !strcmp(words[0], "show-pools")
 				|| !strcmp(words[0], "show-finished") || !strcmp(words[0], "shutdown"))
 			{
 				if (words[1] != NULL) //Too many arguments!Must be 1
 				{
-					fprintf(stderr, "Too many arguments!\n");
+					fprintf(stderr, "Too many arguments!No arguments required.\n");
 					continue;
 				}
 			}
@@ -113,7 +121,7 @@ int send_input(FILE* input, int max_args, int max_len, int coord_pid, int readfd
 			}
 			else
 			{
-				fprintf(stderr, "Unknown command: %s\n", command);		
+				fprintf(stderr, "Unknown command: %s\n\n", command);		
 				continue;	
 			}
 		}
