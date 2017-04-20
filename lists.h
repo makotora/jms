@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 
@@ -12,7 +13,7 @@ struct job_stats
 {
 	int id;
 	int status;/*-1: suspended, 0 running, 1 finished*/
-	int start_time;
+	long int start_time;
 };
 
 typedef struct job_info job_info;
@@ -55,7 +56,8 @@ struct pool_info
 	int id;
 	int pid;
 	int status;/*0 running,1 finished*/
-	int active_count;
+	int job_count;
+	int finished_count;
 	int send_fd;
 	int receive_fd;
 	job_stats* jobs;
@@ -82,4 +84,5 @@ pool_info* pool_list_get_last(pool_list* list_ptr);
 void pool_info_print(pool_info info);
 void pool_list_print(pool_list* list_ptr);
 
+void job_finished(pool_info* p_info, int pool_max, char* message);
 #endif

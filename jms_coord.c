@@ -89,7 +89,7 @@ int main(int argc, char* argv[])
 	int job_counter = 0;
 	int pool_pid, pool_status;
 	int reply_code;
-	int finished_job_id, i, job_id;
+	int i, job_id;
 	char* command;
 	char* command_type;
 	pool_list* p_list;
@@ -101,6 +101,7 @@ int main(int argc, char* argv[])
 
 	while (running)
 	{
+		//(1) CHECK IF ANY POOL HAS FINISHED
 		pool_pid = waitpid(-1, &pool_status, WNOHANG);/*Check if any pool has finished*/
 
 		if (pool_pid > 0)
@@ -114,10 +115,35 @@ int main(int argc, char* argv[])
 
 			p_info->status = 1;//note that it finished
 			read(p_info->receive_fd, message, BUFSIZE);
-			fprintf(stderr, "Pool %d (%d) finished\n",p_info->id, p_info->pid);
+			fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
 
 			close(p_info->receive_fd);
 			close(p_info->send_fd);
+		}
+
+		//(2) CHECK IF ANY OF THE POOLS JOBS HAS FINISHED (IF THEY SEND A "JOBDONE" message)
+		pool = p_list->first;
+
+		while (pool != NULL)//until we reach the end of the pool list
+		{
+			if (pool->info->status == 0) //If this pool isnt finished yet
+			{
+				//read all messages this pool has sent (if there are any)
+				while (read(pool->info->receive_fd, message, BUFSIZE) > -1)
+				{
+					job_finished(pool->info, pool_max, message);//note that this job is finished
+				}
+
+				//If all of this pool's children are done.Note that this pool has nothing more to say
+				if (pool->info->finished_count == pool_max)
+				{
+					pool->info->status = 1;
+					strcpy(message, "bye");//send message to pool so it can finish
+					write(pool->info->send_fd, message, BUFSIZE);
+				}
+			}
+
+			pool = pool->next;
 		}
 		
 		if (read(receive_fd, message, BUFSIZE) > -1)//If we have something to read from console
@@ -167,11 +193,12 @@ int main(int argc, char* argv[])
 					p_info = malloc(sizeof(pool_info));
 					p_info->id = pool_counter;
 					p_info->status = 0;
-					p_info->active_count = 0;
+					p_info->job_count = 0;
+					p_info->finished_count = 0;
 					p_info->jobs = malloc(pool_max*sizeof(job_stats));
 
 					//Open pipes (block until pool opens them as well)
-					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY)) < 0)
+					if ( (p_info->receive_fd = open(pool_pipe_in, O_RDONLY | O_NONBLOCK)) < 0)
 					{
 						perror("Cannot open jms_in pipe");
 					}
@@ -197,15 +224,32 @@ int main(int argc, char* argv[])
 
 				//The pool to handle this submit is there (maybe just created).Forward the submit command
 				p_info = pool_list_get_last(p_list);//get info for the correct pool (the last there is)
-				p_info->active_count++;
+				p_info->job_count++;
 
 				//Forward the message
 				fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 				write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
 
+				//handle possible messages for job finishing from that specific pool (they start with !)
+				while (  reply[0] == '!' )
+				{
+					job_finished(p_info, pool_max, reply);//note that this job is finished
+
+					while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
+				}
+
+				//If all of this pool's jobs are done.Note that this pool has nothing more to say
+				if (p_info->finished_count == pool_max)
+				{
+					p_info->status = 1;
+					strcpy(message, "bye");//send message to pool so it can finish
+					write(p_info->send_fd, message, BUFSIZE);
+				}
+				//reply now contains the actual reply to the command
+
 				job_counter++;
 				//Note info for this job
-				i = job_counter % pool_max;
+				i = (job_counter - 1) % pool_max;
 				(p_info->jobs)[i].id = job_counter;
 				(p_info->jobs)[i].status = 0;//Note that this job is running 
 				(p_info->jobs)[i].start_time = time(NULL);
@@ -226,7 +270,25 @@ int main(int argc, char* argv[])
 					if (p_info->jobs[i].status == 0)
 					{
 						//forward suspend message to that pool
+						fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
+
+						//handle possible messages for job finishing from that specific pool (they start with !)
+						while (  reply[0] == '!' )
+						{
+							job_finished(p_info, pool_max, reply);//note that this job is finished
+
+							while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
+						}
+
+						//If all of this pool's jobs are done.Note that this pool has nothing more to say
+						if (p_info->finished_count == pool_max)
+						{
+							p_info->status = 1;
+							strcpy(message, "bye");//send message to pool so it can finish
+							write(p_info->send_fd, message, BUFSIZE);
+						}
+						//reply now contains the actual reply to the command
 						//pool will send back a reply for the command
 						//0 means OK
 						//-1 means FAIL.job is already done.
@@ -279,7 +341,26 @@ int main(int argc, char* argv[])
 					if (p_info->jobs[i].status == -1)//if its suspended
 					{
 						//forward suspend message to that pool
+						//Forward the message
+						fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
+
+						//handle possible messages for job finishing from that specific pool (they start with !)
+						while (  reply[0] == '!' )
+						{
+							job_finished(p_info, pool_max, reply);//note that this job is finished
+
+							while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
+						}
+
+						//If all of this pool's jobs are done.Note that this pool has nothing more to say
+						if (p_info->finished_count == pool_max)
+						{
+							p_info->status = 1;
+							strcpy(message, "bye");//send message to pool so it can finish
+							write(p_info->send_fd, message, BUFSIZE);
+						}
+						//reply now contains the actual reply to the command
 						//pool will send back a reply for the command
 						//0 means OK
 						//-1 means Fail.job is already done.
@@ -294,7 +375,7 @@ int main(int argc, char* argv[])
 						else//reply_code == -1 , meaning that job is finished but coord didnt know yet
 						{
 							p_info->jobs[i].status = 1;//not that this job is now finished
-							sprintf(reply, "Cannot resume.Job %d has finished!\n", job_id);
+							sprintf(reply, "Cannot resume.Job %d didnt receive the signal!\n", job_id);
 						}
 					}
 					else if (p_info->jobs[i].status == 0)//if its running
@@ -328,41 +409,17 @@ int main(int argc, char* argv[])
 					{
 						sprintf(reply, "JobID %d Status: Suspended\n", job_id);
 					}
-					else //job is not suspended.So its either running or finished.We dont know yet
-					{//Ask its pool for info
-						if (p_info->status == 0) //If this pool isnt finished yet
-						{
-							strcpy(message, "info");//request info/update from that pool
-							write(p_info->send_fd, message, BUFSIZE);
-							
-							read(p_info->receive_fd, reply, BUFSIZE);
-							finished_job_id = atoi(reply);
-
-							while (finished_job_id != -1)//until pool sends -1 (for end of communication)
-							{
-								fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", p_info->id , finished_job_id);
-								i = (finished_job_id - 1) % pool_max;
-								((p_info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
-								read(p_info->receive_fd, reply, BUFSIZE);
-								finished_job_id = atoi(reply);
-							}
-						}
-						//NOW THAT WE GOT INFO/UPDATE FROM THIS POOL.CHECK THE JOB'S STATUS
-
-						//if job is still runnning
-						if (p_info->jobs[i].status == 0)
-						{
-							sprintf(reply, "JobID %d Status: Active (running for %ld sec)\n",
-							 job_id, time(NULL) - p_info->jobs[i].start_time);
-						}
-						//if job is finished (its not suspended.we checked that above)
-						else // status == 1
-						{
-							sprintf(reply, "JobID %d Status: Finished\n", job_id);	
-						}
-
+					//if job is still runnning
+					else if (p_info->jobs[i].status == 0)
+					{
+						sprintf(reply, "JobID %d Status: Active (running for %ld sec)\n",
+						 job_id, time(NULL) - p_info->jobs[i].start_time);
 					}
-
+					//if job is finished (its not suspended.we checked that above)
+					else // status == 1
+					{
+						sprintf(reply, "JobID %d Status: Finished\n", job_id);	
+					}
 				}
 				else
 				{
@@ -375,35 +432,7 @@ int main(int argc, char* argv[])
 			}
 			else
 			{ 
-			//If its not a submit,suspend,resume,status,shutdown command
-			//It will be a command that needs info from all pools
-			//first send a message to each pool to request info/update on the jobs status
-				pool = p_list->first;
 
-				while (pool != NULL)//until we reach the end of the pool list
-				{
-					if (pool->info->status == 0) //If this pool isnt finished yet
-					{
-						strcpy(message, "info");//request info
-						write(pool->info->send_fd, message, BUFSIZE);
-						
-						read(pool->info->receive_fd, reply, BUFSIZE);
-						finished_job_id = atoi(reply);
-
-						while (finished_job_id != -1)//until pool sends -1 (for end of communication)
-						{
-							fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", pool->info->id, finished_job_id);
-							pool->info->active_count--;
-							i = (finished_job_id - 1) % pool_max;
-							((pool->info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
-
-							read(pool->info->receive_fd, reply, BUFSIZE);
-							finished_job_id = atoi(reply);
-						}
-					}
-
-					pool = pool->next;
-				}
 			}
 
 			//SEND MESSAGE/REPLY TO CONSOLE

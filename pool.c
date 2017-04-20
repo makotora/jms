@@ -70,18 +70,15 @@ int main(int argc, char* argv[])
 	int job_id, job_pid, job_status;
 	char timestr[7];
 	char datestr[9];
-	char* pop;
 	job_list* j_list;
 	job_info* j_info;
-	queue* message_queue;
 
 	j_list = job_list_create();
-	message_queue = queue_create();
 
 	finished_jobs = 0;
 
 	//Pool finishes when max jobs jobs are finished AND we delivered all messages to coord
-	while (finished_jobs < max_jobs || !queue_is_empty(message_queue))
+	while (1)
 	{
 		job_pid = waitpid(-1, &job_status, WNOHANG);/*Check if any job has finished*/
 
@@ -98,10 +95,14 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "\tPool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
 			finished_jobs++;
 
-			//Add a message to the message (to be sent to coord)
-			//saying that this job has finished
-			sprintf(message, "%d", j_info->id);
-			queue_push(message_queue, message);
+			//Sent message to coord that this job has finished and what its start time
+			sprintf(message, "! %d", j_info->id);
+			write(send_fd, message, BUFSIZE);
+
+			if (finished_jobs == max_jobs)//nothing to do in this while.Move to next one
+			{
+				break;
+			}
 		}
 
 		if (read(receive_fd, message, BUFSIZE) > 0)
@@ -161,11 +162,6 @@ int main(int argc, char* argv[])
 					}
 				}
 
-				free_arg_array(job_args);
-				free(job_args);
-				arglist_free(&arglist);
-
-
 				//Make a new node for this job and add it to the joblist
 				job_counter++;
 				
@@ -175,24 +171,12 @@ int main(int argc, char* argv[])
 				j_info->status = 0;
 				job_list_add(j_list, j_info);
 
+				free_arg_array(job_args);
+				free(job_args);
+				arglist_free(&arglist);
+
 				//Reply to coord (job id and pid)
 				sprintf(message, "JobID: %d, PID: %d\n", job_counter, job_pid);
-			}
-			else if (!strcmp(token, "info"))//My own command that is used to ask pools for info
-			{
-				//Send all messages in message_queue
-				while ( queue_is_empty(message_queue) == 0 )
-				{
-					pop = queue_pop(message_queue);
-					strcpy(message, pop);
-					free(pop);
-					fprintf(stderr, "\tPool %d: Sending info: %s\n", pool_no, message);
-					write(send_fd, message, BUFSIZE);
-
-				}
-
-				//Send end of communication message -1
-				strcpy(message, "-1");
 			}
 			else if (!strcmp(token, "suspend"))
 			{
@@ -228,8 +212,35 @@ int main(int argc, char* argv[])
 
 	}
 
+	/*After all jobs are finished.Coord MAY send a suspend command
+	realises that the pool finished with all its jobs (specifically with the job coord wants to suspend)
+	When coord receives the last message from this pool (the last job done command) he will send 'bye'
+	so pool can terminate
+	*/
 
-	queue_free(&message_queue);
+	while (1)//Until coord receives the last 'JOB DONE' message.Answer with -1 (fail) to suspend commands
+	{
+		if (read(receive_fd, message, BUFSIZE) > 0)
+		{
+			fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
+			token = strtok(message, " \t\n");//get first word of message to see the type
+			
+			if (!strcmp(token, "suspend"))
+			{
+				strcpy(message, "-1");//send fail message to coord (job is already finished)	
+				write(send_fd, message, BUFSIZE);
+			}
+			else if (!strcmp(token, "bye"))
+			{
+				break;
+			}
+			else//This should never happen..If it does I want to know (debug)
+			{
+				fprintf(stderr, "<!>Pool %d: I am done with all jobs.Nothing to do!\n", pool_no);
+			}
+		}
+	}
+
 	job_list_free(&j_list);
 	close(send_fd);
 	close(receive_fd);
@@ -243,7 +254,7 @@ int main(int argc, char* argv[])
 		perror("Pool: Cannot unlink");
 	}
 
-	fprintf(stderr, "Pool: Done!\n");
+	fprintf(stderr, "\tPool %d: Finished!\n", pool_no);
 
 	return 0;
 }
