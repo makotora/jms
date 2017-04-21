@@ -87,7 +87,9 @@ int main(int argc, char* argv[])
 
 	//HANDLE INCOMING MESSAGES
 	int pool_counter = 0;
+	int finished_pools = 0;
 	int job_counter = 0;
+	int interrupted_jobs;
 	int pool_pid, pool_status;
 	int reply_code;
 	int i, j, job_id, time_duration, q_time, counter, job_limit;
@@ -118,6 +120,7 @@ int main(int argc, char* argv[])
 			}
 
 			p_info->status = 1;//note that it finished
+			finished_pools++;
 			read(p_info->receive_fd, message, BUFSIZE);
 			fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
 
@@ -133,7 +136,7 @@ int main(int argc, char* argv[])
 			if (pool->info->status == 0) //If this pool isnt finished yet
 			{
 				//read all messages this pool has sent (if there are any)
-				while (read(pool->info->receive_fd, message, BUFSIZE) > -1)
+				while (read(pool->info->receive_fd, message, BUFSIZE) > 0)
 				{
 					job_finished(pool->info, pool_max, message);//note that this job is finished
 				}
@@ -150,7 +153,7 @@ int main(int argc, char* argv[])
 			pool = pool->next;
 		}
 		
-		if (read(receive_fd, message, BUFSIZE) > -1)//If we have something to read from console
+		if (read(receive_fd, message, BUFSIZE) > 0)//If we have something to read from console
 		{
 			fprintf(stderr, "Coord: Console sent me: %s\n", message);
 			command = malloc((strlen(message) + 1)*sizeof(char));
@@ -296,7 +299,7 @@ int main(int argc, char* argv[])
 			{
 				token = strtok(NULL, " \t\n");
 				counter = 0;
-				q_time = time(NULL);//not question time
+				q_time = time(NULL);//note question time
 
 				time_duration = -1;
 				if (token != NULL)//if command includes time-duration
@@ -329,7 +332,7 @@ int main(int argc, char* argv[])
 							else if (pool->info->jobs[j].status == 0)
 							{
 								sprintf(reply, "%d. JobID %d Status: Active (running for %ld sec)\n",
-								 counter, job_id, q_time - p_info->jobs[i].start_time);
+								 counter, job_id, q_time - pool->info->jobs[j].start_time);
 							}
 							//if job is finished (its not suspended.we checked that above)
 							else // status == 1
@@ -344,7 +347,11 @@ int main(int argc, char* argv[])
 					pool = pool->next;
 				}
 				//for the last pool (that may not be "full")
-				job_limit = job_counter % pool_max;
+				if (job_counter % pool_max != 0)
+				{
+					job_limit = job_counter % pool_max;
+				}
+
 				for (j=0;j<job_limit;j++)
 				{
 					//if time_duration doesnt matter (wasnt asked)
@@ -363,7 +370,7 @@ int main(int argc, char* argv[])
 						else if (pool->info->jobs[j].status == 0)
 						{
 							sprintf(reply, "%d. JobID %d Status: Active (running for %ld sec)\n",
-							 counter, job_id, q_time - p_info->jobs[i].start_time);
+							 counter, job_id, q_time - pool->info->jobs[j].start_time);
 						}
 						//if job is finished (its not suspended.we checked that above)
 						else // status == 1
@@ -409,7 +416,12 @@ int main(int argc, char* argv[])
 					pool = pool->next;
 				}
 				//for the last pool (that may not be "full")
-				job_limit = job_counter % pool_max;
+				if (job_counter % pool_max != 0)
+				{
+					job_limit = job_counter % pool_max;
+				}
+				//(else) job_limit = pool_max (like before)
+
 				for (j=0;j<job_limit;j++)
 				{
 					if (pool->info->jobs[j].status != 1)//if job is not finished.it is active
@@ -481,7 +493,11 @@ int main(int argc, char* argv[])
 					pool = pool->next;
 				}
 				//for the last pool (that may not be "full")
-				job_limit = job_counter % pool_max;
+				if (job_counter % pool_max != 0)
+				{
+					job_limit = job_counter % pool_max;
+				}
+
 				for (j=0;j<job_limit;j++)
 				{
 					if (pool->info->jobs[j].status == 1)//if job is finished
@@ -642,10 +658,55 @@ int main(int argc, char* argv[])
 			else if ( !strcmp(token, "shutdown") )
 			{
 				running = 0;
+				pool = p_list->first;
+
+				//for all pools that are still active
+				while (pool != NULL)
+				{
+					if (pool->info->status == 0)
+					{
+						fprintf(stderr, "Coord: Sending SIGTERM signal to pool %d (pid %d)\n",pool->info->id, pool->info->pid);
+						kill(pool->info->pid, 15);//send a SIGTERM Signal to that pool
+					}
+
+					pool = pool->next;
+				}
+
+				//Now wait for the pools who we havent been noted as finished (didnt catch SIGCHLD)
+				interrupted_jobs = 0;//receive from pools the number of jobs interrupted
+				for (i = 0; i < (pool_counter - finished_pools); i++)
+				{
+					pool_pid = waitpid(-1, &pool_status, 0);//wait for any pool to finish
+					p_info = pool_list_getby_pid(p_list, pool_pid);
+					fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
+
+					//receive this pool's messages we haven't read yet
+					//it will return 0 when the pool closes the pipe
+					while ( read(p_info->receive_fd, message, BUFSIZE) > 0)
+					{
+						//if its a message for a finished job
+						if (message[0] == '!')
+						{
+							job_finished(p_info, pool_max, message);//note that this job is finished
+						}
+						else //its the pool's last message saying how many jobs were interrupted
+						{//due to the shutdown
+							counter = atoi(message);
+							fprintf(stderr, "Coord: Pool %d told me that %d jobs were interrupted\n",p_info->id, counter);
+							interrupted_jobs += counter;
+						}
+					}
+
+					close(p_info->receive_fd);
+					close(p_info->send_fd);
+				}
+				sprintf(reply, "Served %d jobs, %d were still in progress\n", job_counter, interrupted_jobs);
+
 			}
 			else
 			{ 
-
+				fprintf(stderr, "Coord: Console sent me something strange: %s\n", command);
+				sprintf(reply, "Unknown/Unexpected command : %s\n", command);
 			}
 
 			//SEND MESSAGE/REPLY TO CONSOLE

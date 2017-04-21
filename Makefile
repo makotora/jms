@@ -1,6 +1,6 @@
 OBJS = jms_coord.o jms_console.o pool.o sleep.o
-OBJS2 = functions.o lists.o input.o tests.o arglist.o mystring.o
-SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c tests.c pool.c arglist.c mystring.c
+OBJS2 = functions.o lists.o input.o arglist.o mystring.o
+SOURCE = jms_coord.c jms_console.c functions.c lists.c input.c pool.c arglist.c mystring.c
 HEADER = functions.h lists.h input.h arglist.h mystring.h
 CC = gcc
 CFLAGS= -c -Wall $(DEBUG)

@@ -17,6 +17,14 @@
 #include "functions.h"
 #include "arglist.h"
 
+int shutdown = 0;
+int pool_no;
+
+void shutdown_handler(int x)
+{
+	fprintf(stderr, "\tPool %d: Coord sent me a SIGTERM signal\n", pool_no);
+	shutdown = 1;
+}
 
 int main(int argc, char* argv[])
 {
@@ -37,7 +45,7 @@ int main(int argc, char* argv[])
 	int job_counter = atoi(argv[4]);
 	int max_jobs = atoi(argv[5]);
 
-	int pool_no = job_counter / max_jobs + 1;
+	pool_no = job_counter / max_jobs + 1;
 	//Open pipes & "Handshake" with coord
 	if ( (send_fd = open(send_pipe, O_WRONLY)) < 0)
 	{
@@ -64,20 +72,26 @@ int main(int argc, char* argv[])
 	coord_pid = atoi(message);
 	fprintf(stderr, "\tPool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
 
+	//set signal handler for SIGTERM (shutdown)
+	signal(SIGTERM, &shutdown_handler);
+
 	//HANDLE INCOMING MESSAGES
 	int finished_jobs;
 	int job_id, job_pid, job_status;
+	int interrupted_jobs;
 	char timestr[7];
 	char datestr[9];
 	job_list* j_list;
+	job_node* job;
 	job_info* j_info;
 
 	j_list = job_list_create();
 
 	finished_jobs = 0;
 
-	//Pool finishes when max jobs jobs are finished AND we delivered all messages to coord
-	while (1)
+	//Pool finishes when max jobs jobs are finished AND we delivered all messages to coord (with break)
+	//Or if shutdown was sent (SIGTERM)
+	while (shutdown == 0)
 	{
 		job_pid = waitpid(-1, &job_status, WNOHANG);/*Check if any job has finished*/
 
@@ -94,7 +108,7 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "\tPool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
 			finished_jobs++;
 
-			//Sent message to coord that this job has finished and what its start time
+			//Send message to coord that this job has finished
 			sprintf(message, "! %d", j_info->id);
 			write(send_fd, message, BUFSIZE);
 
@@ -217,8 +231,8 @@ int main(int argc, char* argv[])
 	so pool can terminate
 	*/
 
-	while (1)//Until coord receives the last 'JOB DONE' message.Answer with -1 (fail) to suspend commands
-	{
+	while (shutdown == 0)//Until coord receives the last 'JOB DONE' message.Answer with -1 (fail) to suspend commands
+	{//(and no shutdown signal was received)
 		if (read(receive_fd, message, BUFSIZE) > 0)
 		{
 			fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
@@ -240,6 +254,42 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	if (shutdown == 1)//if console sent shutdown (and coord sent SIGTERM)
+	{
+		//send a SIGTERM signal to all jobs of this poll we havent noted as finished
+		job = j_list->first;
+		interrupted_jobs = 0;
+
+		while (job != NULL)
+		{
+			if (job->info->status != 1)//if it is not noted as finished (it is running or suspended)
+			{
+				if (kill(job->info->pid, 15) == 0)
+				{//if SIGTERM signal was succesfully sent
+					interrupted_jobs++;//count this job as interrupted
+				}
+				else
+				{
+					fprintf(stderr, "\tPool %d: (%s) Failed to send SIGTERM to job %d.It just finished!\n",
+					 pool_no, receive_pipe, job->info->id);
+					j_info->status = 1;//note that this job is finished
+
+					finished_jobs++;
+					//Send message to coord that this job has finished
+					sprintf(message, "! %d", j_info->id);
+					write(send_fd, message, BUFSIZE);
+				}
+
+			}
+
+			job = job->next;
+		}
+
+		//Send how many jobs were interrupted to coord
+		sprintf(message, "%d", interrupted_jobs);
+		write(send_fd, message, BUFSIZE);
+	}
+
 	job_list_free(&j_list);
 	close(send_fd);
 	close(receive_fd);
@@ -253,7 +303,8 @@ int main(int argc, char* argv[])
 		perror("Pool: Cannot unlink");
 	}
 
-	fprintf(stderr, "\tPool %d: Finished!\n", pool_no);
+	fprintf(stderr, "\tPool %d finished:\n\t%d jobs finished,%d jobs interrupted\n",
+	pool_no, finished_jobs, interrupted_jobs);
 
 	return 0;
 }
