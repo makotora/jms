@@ -1,0 +1,14 @@
+submit ls
+submit ls -all ..
+submit ls directory_that_doesnt_exist
+submit cp something_not_there name_that_doesnt_matter
+submit echo this is an output
+submit cat jms_script.sh
+submit cat op_files/submits
+submit cat sleep.c
+submit cat README.txt
+submit cat lists.h
+submit cat jms_coord.c
+submit job_that_doesnt_exist
+submit ./jms_script.sh -l dir -c size
+status-all

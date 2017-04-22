@@ -22,7 +22,8 @@ int pool_no;
 
 void shutdown_handler(int x)
 {
-	fprintf(stderr, "\tPool %d: Coord sent me a SIGTERM signal\n", pool_no);
+	if (PRINTS == 1)
+		fprintf(stderr, "\tPool %d: Coord sent me a SIGTERM signal\n", pool_no);
 	shutdown = 1;
 }
 
@@ -55,7 +56,8 @@ int main(int argc, char* argv[])
 
 	//Send pid to coord
 	pid = getpid();
-	fprintf(stderr, "\tPool %d: My pid is %d.Sending it to coord\n", pool_no, pid);
+	if (PRINTS == 1)
+		fprintf(stderr, "\tPool %d: My pid is %d.Sending it to coord\n", pool_no, pid);
 	sprintf(message, "%d", pid);
 	write(send_fd, message, BUFSIZE);
 
@@ -70,7 +72,8 @@ int main(int argc, char* argv[])
 	while(read(receive_fd, message, BUFSIZE) == -1);
 	
 	coord_pid = atoi(message);
-	fprintf(stderr, "\tPool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
+	if (PRINTS == 1)
+		fprintf(stderr, "\tPool %d: Received coord's pid (%d)\n", pool_no, coord_pid);
 
 	//set signal handler for SIGTERM (shutdown)
 	signal(SIGTERM, &shutdown_handler);
@@ -105,7 +108,8 @@ int main(int argc, char* argv[])
 			}
 			j_info->status = 1;//note that this job is finished
 
-			fprintf(stderr, "\tPool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
+			if (PRINTS == 1)
+				fprintf(stderr, "\tPool %d: Job %d (%d) finished\n", pool_no, j_info->id, j_info->pid);
 			finished_jobs++;
 
 			//Send message to coord that this job has finished
@@ -120,7 +124,8 @@ int main(int argc, char* argv[])
 
 		if (read(receive_fd, message, BUFSIZE) > 0)
 		{
-			fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
+			if (PRINTS == 1)
+				fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
 			token = strtok(message, " \t\n");//get first word of message to see the type
 
 			if (!strcmp(token, "submit"))
@@ -141,15 +146,15 @@ int main(int argc, char* argv[])
 				{
 					//make directory for output
 					get_date_time_str(datestr, timestr);
-					sprintf(job_dir, "%s/sdi1400201_%d_%d_%s_%s",path, job_counter, getpid(), datestr, timestr);
+					sprintf(job_dir, "%s/sdi1400201_%d_%d_%s_%s",path, job_counter + 1, getpid(), datestr, timestr);
 					mkdir(job_dir, 0777);
 
 
 					//make files for output and change stdin and stderr (write to files)
-					sprintf(open_dir, "%s/stdout_%d", job_dir, job_counter);
+					sprintf(open_dir, "%s/stdout_%d", job_dir, job_counter + 1);
 					fd_stdout = open(open_dir, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 
-					sprintf(open_dir, "%s/stderr_%d", job_dir, job_counter);
+					sprintf(open_dir, "%s/stderr_%d", job_dir, job_counter + 1);
 					fd_stderr = open(open_dir, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 
 					dup2(fd_stdout, 1);
@@ -170,7 +175,7 @@ int main(int argc, char* argv[])
 						arglist_free(&arglist);
 						job_list_free(&j_list);
 
-						perror("Invalid submit!");
+						perror("Invalid submit");
 						exit(-5);
 					}
 				}
@@ -235,7 +240,8 @@ int main(int argc, char* argv[])
 	{//(and no shutdown signal was received)
 		if (read(receive_fd, message, BUFSIZE) > 0)
 		{
-			fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
+			if (PRINTS == 1)
+				fprintf(stderr, "\tPool %d: (%s) Coord sent me: %s\n", pool_no, receive_pipe, message);
 			token = strtok(message, " \t\n");//get first word of message to see the type
 			
 			if (!strcmp(token, "suspend"))
@@ -270,7 +276,8 @@ int main(int argc, char* argv[])
 				}
 				else
 				{
-					fprintf(stderr, "\tPool %d: (%s) Failed to send SIGTERM to job %d.It just finished!\n",
+					if (PRINTS == 1)
+						fprintf(stderr, "\tPool %d: (%s) Failed to send SIGTERM to job %d.It just finished!\n",
 					 pool_no, receive_pipe, job->info->id);
 					j_info->status = 1;//note that this job is finished
 
@@ -303,7 +310,8 @@ int main(int argc, char* argv[])
 		perror("Pool: Cannot unlink");
 	}
 
-	fprintf(stderr, "\tPool %d finished:\n\t%d jobs finished,%d jobs interrupted\n",
+	if (PRINTS == 1)
+		fprintf(stderr, "\tPool %d finished:\n\t%d jobs finished,%d jobs interrupted\n",
 	pool_no, finished_jobs, interrupted_jobs);
 
 	return 0;

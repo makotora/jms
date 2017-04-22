@@ -15,6 +15,7 @@
 #include <sys/wait.h>
 
 #define BUFSIZE 1024
+#define PRINTS 1
 
 int write_and_read(char* message, char* reply, int readfd, int writefd);
 int intToString(int integer,char **string_ptr);

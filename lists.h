@@ -84,5 +84,5 @@ pool_info* pool_list_get_last(pool_list* list_ptr);
 void pool_info_print(pool_info info);
 void pool_list_print(pool_list* list_ptr);
 
-void job_finished(pool_info* p_info, int pool_max, char* message);
+void job_finished(pool_info* p_info, int pool_max, char* message, int prints);
 #endif

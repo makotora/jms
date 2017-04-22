@@ -1,0 +1,31 @@
+submit ./sleep 0
+submit ./sleep 1
+submit ./sleep 5
+submit ./sleep 10
+submit ./sleep 15
+submit ./sleep 20
+submit ./sleep 25
+submit ./sleep 1 100
+submit ./sleep 2 200
+submit ./sleep 3 300
+submit ./sleep 4 400
+submit ./sleep 50 500
+submit ./sleep 5 600
+submit ./sleep 5 700
+suspend 11
+suspend 12
+status 11
+resume 11
+resume 11
+status 11
+submit ./jms_script.sh -l dir -c size
+submit ./jms_script.sh -l dir -c size 7
+status 1
+suspend 1
+resume 1
+status 3
+status 12
+status-all
+show-active
+show-pools
+show-finished

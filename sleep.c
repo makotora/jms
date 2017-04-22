@@ -1,21 +1,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <ctype.h>
+#include <time.h>
 #include <unistd.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
 int main(int argc, char* argv[])
 {
-	int duration = atoi(argv[1]);
-	sleep(duration);
-	fprintf(stdout, "STDOUT OUTPUT OF PROCESS %d\n", getpid());
+	int duration = 5;
+	int write_size;
+	char* output;
+
+	if (argc > 2)
+	{
+		duration = atoi(argv[1]);
+		write_size = atoi(argv[2]) + 1;
+	}
+	else
+	{
+		srand(time(NULL));
+		write_size = rand() % 100;
+		if (argc == 2)
+			duration = atoi(argv[1]);
+	}
+
+	output = malloc(write_size*sizeof(char));
+
+	int i;
+	for (i=0;i<write_size-1;i++)
+		output[i] = 'a';
+
+	output[write_size-1] = '\0';
+
+	fprintf(stdout, "STDOUT OUTPUT OF PROCESS %d\n%s\n", getpid(), output);
 	fprintf(stdout, "STDERR OUTPUT OF PROCESS %d\n", getpid());
+
+	free(output);
+
+	sleep(duration);
 
 	return 0;
 }

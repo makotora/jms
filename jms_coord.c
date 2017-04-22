@@ -21,11 +21,12 @@
 
 int main(int argc, char* argv[])
 {
-	char * path = NULL;
-	char* max_str;
-	int pool_max = -1;
+	char* path = NULL;
+	char* jobs_pool = NULL;
 	char * jms_in = NULL;
 	char * jms_out = NULL;
+	int pool_max;
+
 	int receive_fd, send_fd;
 	int pid, console_pid;
 	char message[BUFSIZE];
@@ -33,16 +34,67 @@ int main(int argc, char* argv[])
 	char* job_count_str;
 	char pool_pipe_in[100]; 
 	char pool_pipe_out[100]; 
+	int index = 1;
 
 	//Read Arguments
-	//..
+	while (index + 1 < argc)
+	{
+		if ( !strcmp(argv[index], "-l"))
+		{
+			path = argv[index + 1];
+			index++;
+		}
+		else if ( !strcmp(argv[index], "-n"))
+		{
+			jobs_pool = argv[index + 1];
+			index++;
+		}
+		else if ( !strcmp(argv[index], "-w"))
+		{
+			jms_out = argv[index + 1];
+			index++;
+		}
+		else if ( !strcmp(argv[index], "-r"))
+		{
+			jms_in = argv[index + 1];
+			index++;
+		}
+		else
+		{
+			fprintf(stderr, "Error!Unknown parameter: %s\n", argv[index]);
+			fprintf(stderr, "Usage: ./jms coord -l <path> -n <jobs_pool> -w <jms_out> -r <jms_in>\n");
+			return -1;
+		}
 
-	path = "temp";
-	max_str = "3";
-	jms_in = "jmsin";
-	jms_out = "jmsout";
+		index++;
+	}
 
-	pool_max = atoi(max_str);
+	if (path == NULL)
+	{
+		fprintf(stderr, "Error!path was not given\n");
+		fprintf(stderr, "Usage: ./jms coord -l <path> -n <jobs_pool> -w <jms_out> -r <jms_in>\n");
+		return -2;
+	}
+	if (jobs_pool == NULL)
+	{
+		fprintf(stderr, "Error!jobs_pool was not given\n");
+		fprintf(stderr, "Usage: ./jms coord -l <path> -n <jobs_pool> -w <jms_out> -r <jms_in>\n");
+		return -2;
+	}
+	if (jms_out == NULL)
+	{
+		fprintf(stderr, "Error!jms_out was not given\n");
+		fprintf(stderr, "Usage: ./jms coord -l <path> -n <jobs_pool> -w <jms_out> -r <jms_in>\n");
+		return -2;
+	}
+	if (jms_in == NULL)
+	{
+		fprintf(stderr, "Error!jms_in was not given\n");
+		fprintf(stderr, "Usage: ./jms coord -l <path> -n <jobs_pool> -w <jms_out> -r <jms_in>\n");
+		return -2;
+	}
+
+	pool_max = atoi(jobs_pool);
 	mkdir(path, 0777);
 
 	//Create pipes for communication with console
@@ -56,7 +108,8 @@ int main(int argc, char* argv[])
 		perror("Cannot create fifo");
 	}
 
-	fprintf(stderr, "Coord: Created pipes.About to try opening them\n");
+	if (PRINTS == 1)
+		fprintf(stderr, "Coord: Created pipes.About to try opening them\n");
 	
 	//Open pipes
 	if ( (receive_fd = open(jms_in, O_RDONLY | O_NONBLOCK)) < 0)
@@ -69,7 +122,8 @@ int main(int argc, char* argv[])
 		perror("Cannot open jms_out pipe");
 	}
 
-	fprintf(stderr, "Coord: Opened pipes!\n");
+	if (PRINTS == 1)
+		fprintf(stderr, "Coord: Opened pipes!\n");
 
 	pid = getpid();
 	
@@ -77,9 +131,11 @@ int main(int argc, char* argv[])
 	read(receive_fd, message, BUFSIZE);//This wont fail because console first writes to jms_in and 
 	//after that opens jms_out for reading (unblocking coord)
 	console_pid = atoi(message);
-	fprintf(stderr, "Coord: Received console's pid (%d)\n", console_pid);
-
-	fprintf(stderr, "Coord: My pid is %d.Sending it to console\n", pid);
+	if (PRINTS == 1)
+	{
+		fprintf(stderr, "Coord: Received console's pid (%d)\n", console_pid);
+		fprintf(stderr, "Coord: My pid is %d.Sending it to console\n", pid);
+	}
 	sprintf(message, "%d", pid);
 	write(send_fd, message, BUFSIZE);//Send my pid to console so he can signal me for messages
 
@@ -95,6 +151,8 @@ int main(int argc, char* argv[])
 	int i, j, job_id, time_duration, q_time, counter, job_limit;
 	char* command;
 	char* token;
+	char timestr[7];
+	char datestr[9];
 	pool_list* p_list;
 	pool_node* pool;
 	pool_info* p_info;
@@ -122,7 +180,8 @@ int main(int argc, char* argv[])
 			p_info->status = 1;//note that it finished
 			finished_pools++;
 			read(p_info->receive_fd, message, BUFSIZE);
-			fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
+			if (PRINTS == 1)
+				fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
 
 			close(p_info->receive_fd);
 			close(p_info->send_fd);
@@ -138,7 +197,7 @@ int main(int argc, char* argv[])
 				//read all messages this pool has sent (if there are any)
 				while (read(pool->info->receive_fd, message, BUFSIZE) > 0)
 				{
-					job_finished(pool->info, pool_max, message);//note that this job is finished
+					job_finished(pool->info, pool_max, message, PRINTS);//note that this job is finished
 				}
 
 				//If all of this pool's children are done.Note that this pool has nothing more to say
@@ -155,7 +214,8 @@ int main(int argc, char* argv[])
 		
 		if (read(receive_fd, message, BUFSIZE) > 0)//If we have something to read from console
 		{
-			fprintf(stderr, "Coord: Console sent me: %s\n", message);
+			if (PRINTS == 1)
+				fprintf(stderr, "Coord: Console sent me: %s\n", message);
 			command = malloc((strlen(message) + 1)*sizeof(char));
 			strcpy(command, message);
 			token = strtok(message, " \t\n");//get first word of message to see the type
@@ -166,9 +226,10 @@ int main(int argc, char* argv[])
 				if (job_counter % pool_max == 0)
 				{
 					pool_counter++;
+					get_date_time_str(datestr, timestr);
 
-					sprintf(pool_pipe_in, "pipe%d_in", pool_counter);
-					sprintf(pool_pipe_out, "pipe%d_out", pool_counter);
+					sprintf(pool_pipe_in, "pipe_%d_%s_%s_in", pool_counter, datestr, timestr);
+					sprintf(pool_pipe_out, "pipe_%d_%s_%s_out", pool_counter, datestr, timestr);
 
 					//Make pipes for communication with pool
 					if ( (mkfifo(pool_pipe_in, PERMS) < 0) && (errno != EEXIST) )
@@ -191,7 +252,7 @@ int main(int argc, char* argv[])
 						close(receive_fd);
 						close(send_fd);
 						
-						execl("./pool","./pool", path, pool_pipe_in, pool_pipe_out, job_count_str, max_str, NULL);
+						execl("./pool","./pool", path, pool_pipe_in, pool_pipe_out, job_count_str, jobs_pool, NULL);
 					}
 
 					free(job_count_str);
@@ -218,10 +279,12 @@ int main(int argc, char* argv[])
 					//"Handshake" with pool
 					read(p_info->receive_fd, message, BUFSIZE);//again like console handshake.this wont fail
 					p_info->pid = atoi(message);
-					fprintf(stderr, "Coord: Received pool %d pid (%d)\n",pool_counter, p_info->pid);
+					if (PRINTS == 1)
+					{
+						fprintf(stderr, "Coord: Received pool %d pid (%d)\n",pool_counter, p_info->pid);
+						fprintf(stderr, "Coord: My pid is %d.Sending it to pool %d\n", pid, pool_counter);
+					}
 
-
-					fprintf(stderr, "Coord: My pid is %d.Sending it to pool %d\n", pid, pool_counter);
 					sprintf(message, "%d", pid);
 					write(p_info->send_fd, message, BUFSIZE);
 
@@ -234,13 +297,14 @@ int main(int argc, char* argv[])
 				p_info->job_count++;
 
 				//Forward the message
-				fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
+				if (PRINTS == 1)
+					fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 				write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
 
 				//handle possible messages for job finishing from that specific pool (they start with !)
 				while (  reply[0] == '!' )
 				{
-					job_finished(p_info, pool_max, reply);//note that this job is finished
+					job_finished(p_info, pool_max, reply, PRINTS);//note that this job is finished
 
 					while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
 				}
@@ -533,13 +597,14 @@ int main(int argc, char* argv[])
 					if (p_info->jobs[i].status == 0)
 					{
 						//forward suspend message to that pool
-						fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
+						if (PRINTS == 1)
+							fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
 
 						//handle possible messages for job finishing from that specific pool (they start with !)
 						while (  reply[0] == '!' )
 						{
-							job_finished(p_info, pool_max, reply);//note that this job is finished
+							job_finished(p_info, pool_max, reply, PRINTS);//note that this job is finished
 
 							while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
 						}
@@ -605,13 +670,14 @@ int main(int argc, char* argv[])
 					{
 						//forward suspend message to that pool
 						//Forward the message
-						fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
+						if (PRINTS == 1)
+							fprintf(stderr, "Coord: Forwarding to pool (%d) : %s\n",p_info->pid, command);
 						write_and_read(command, reply, p_info->receive_fd, p_info->send_fd);
 
 						//handle possible messages for job finishing from that specific pool (they start with !)
 						while (  reply[0] == '!' )
 						{
-							job_finished(p_info, pool_max, reply);//note that this job is finished
+							job_finished(p_info, pool_max, reply, PRINTS);//note that this job is finished
 
 							while( read(p_info->receive_fd, reply, BUFSIZE) == -1);//receive next message
 						}
@@ -665,7 +731,8 @@ int main(int argc, char* argv[])
 				{
 					if (pool->info->status == 0)
 					{
-						fprintf(stderr, "Coord: Sending SIGTERM signal to pool %d (pid %d)\n",pool->info->id, pool->info->pid);
+						if (PRINTS == 1)
+							fprintf(stderr, "Coord: Sending SIGTERM signal to pool %d (pid %d)\n",pool->info->id, pool->info->pid);
 						kill(pool->info->pid, 15);//send a SIGTERM Signal to that pool
 					}
 
@@ -678,7 +745,8 @@ int main(int argc, char* argv[])
 				{
 					pool_pid = waitpid(-1, &pool_status, 0);//wait for any pool to finish
 					p_info = pool_list_getby_pid(p_list, pool_pid);
-					fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
+					if (PRINTS == 1)
+						fprintf(stderr, "Coord: Pool %d (pid %d) has finished\n",p_info->id, p_info->pid);
 
 					//receive this pool's messages we haven't read yet
 					//it will return 0 when the pool closes the pipe
@@ -687,12 +755,13 @@ int main(int argc, char* argv[])
 						//if its a message for a finished job
 						if (message[0] == '!')
 						{
-							job_finished(p_info, pool_max, message);//note that this job is finished
+							job_finished(p_info, pool_max, message, PRINTS);//note that this job is finished
 						}
 						else //its the pool's last message saying how many jobs were interrupted
 						{//due to the shutdown
 							counter = atoi(message);
-							fprintf(stderr, "Coord: Pool %d told me that %d jobs were interrupted\n",p_info->id, counter);
+							if (PRINTS == 1)
+								fprintf(stderr, "Coord: Pool %d told me that %d jobs were interrupted\n",p_info->id, counter);
 							interrupted_jobs += counter;
 						}
 					}
@@ -704,8 +773,9 @@ int main(int argc, char* argv[])
 
 			}
 			else
-			{ 
-				fprintf(stderr, "Coord: Console sent me something strange: %s\n", command);
+			{
+				if (PRINTS == 1) 
+					fprintf(stderr, "Coord: Console sent me something strange: %s\n", command);
 				sprintf(reply, "Unknown/Unexpected command : %s\n", command);
 			}
 

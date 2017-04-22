@@ -231,7 +231,7 @@ void pool_list_print(pool_list* list_ptr)
 }
 
 
-void job_finished(pool_info* p_info, int pool_max, char* message)
+void job_finished(pool_info* p_info, int pool_max, char* message, int prints)
 {
 	char * token;
 	int finished_job_id,i;
@@ -239,7 +239,8 @@ void job_finished(pool_info* p_info, int pool_max, char* message)
 	token = strtok(message, " \t\n");//ignore the '!'
 	token = strtok(NULL, " \t\n");//get job id
 	finished_job_id = atoi(token);
-	fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", p_info->id, finished_job_id);
+	if (prints == 1)
+		fprintf(stderr, "Coord: Pool %d told me that job %d is done\n", p_info->id, finished_job_id);
 	p_info->finished_count++;
 	i = (finished_job_id - 1) % pool_max;
 	((p_info->jobs)[i]).status = 1;//Note that this job (of this pull) is done
